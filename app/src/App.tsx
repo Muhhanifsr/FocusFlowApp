@@ -64,14 +64,16 @@ function SettingsView({ darkMode, setDarkMode }: { darkMode: boolean; setDarkMod
 }
 
 function App() {
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    try { return JSON.parse(localStorage.getItem("focusflow-tasks") || "null") || initialTasks; } catch { return initialTasks; }
+  });
   const [filter, setFilter] = useState("Today");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskPriority, setTaskPriority] = useState<Task["priority"]>("Medium");
   const [taskDate, setTaskDate] = useState(jakartaDate());
-  const [running, setRunning] = useState(false);
-  const [seconds, setSeconds] = useState(25 * 60);
   const [period, setPeriod] = useState<"Focus" | "Short Break" | "Long Break">("Focus");
+  const [activePeriod, setActivePeriod] = useState<"Focus" | "Short Break" | "Long Break" | null>(null);
+  const [timerValues, setTimerValues] = useState({ Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 });
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [page, setPage] = useState<"overview" | "calendar" | "insights" | "settings">("overview");
   const [darkMode, setDarkMode] = useState(false);
@@ -90,16 +92,20 @@ function App() {
 
   const durations = { Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 };
   useEffect(() => {
-    if (!running) return;
-    const timer = window.setInterval(() => setSeconds((value) => value > 0 ? value - 1 : durations[period]), 1000);
+    if (!activePeriod) return;
+    const timer = window.setInterval(() => setTimerValues((current) => {
+      const value = current[activePeriod];
+      if (value <= 1) { setActivePeriod(null); return { ...current, [activePeriod]: durations[activePeriod] }; }
+      return { ...current, [activePeriod]: value - 1 };
+    }), 1000);
     return () => window.clearInterval(timer);
-  }, [running, period]);
+  }, [activePeriod]);
 
   useEffect(() => {
-    if (!running || period !== "Focus") return;
+    if (activePeriod !== "Focus") return;
     const tracker = window.setInterval(() => setFocusSeconds((current) => current + 1), 1000);
     return () => window.clearInterval(tracker);
-  }, [running, period]);
+  }, [activePeriod]);
 
   useEffect(() => {
     const carousel = window.setInterval(() => setQuoteIndex((current) => (current + 1) % quotes.length), 5500);
@@ -107,6 +113,7 @@ function App() {
   }, [quotes.length]);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
+  useEffect(() => { localStorage.setItem("focusflow-tasks", JSON.stringify(tasks)); }, [tasks]);
 
   useEffect(() => {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
@@ -123,6 +130,7 @@ function App() {
   const completed = todayTasks.filter((task) => task.done).length;
   const dailyProgress = todayTasks.length ? Math.round(completed / todayTasks.length * 100) : 0;
   const focusDisplay = focusSeconds >= 3600 ? `${Math.floor(focusSeconds / 3600)}h ${Math.floor((focusSeconds % 3600) / 60)}m` : `${Math.floor(focusSeconds / 60)}m`;
+  const seconds = timerValues[period];
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   function toggleTask(id: number) { setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task)); }
@@ -134,7 +142,7 @@ function App() {
     setTaskPriority("Medium");
     setShowTaskForm(false);
   }
-  function changePeriod(next: "Focus" | "Short Break" | "Long Break") { setPeriod(next); setSeconds(durations[next]); setRunning(false); }
+  function changePeriod(next: "Focus" | "Short Break" | "Long Break") { setPeriod(next); }
 
   return (
     <div className="app-shell">
@@ -156,7 +164,7 @@ function App() {
         <section className="stat-grid"><article><div className="stat-icon violet"><Icon name="check"/></div><div><span>Tasks completed</span><strong>{completed}<em> / {todayTasks.length}</em></strong></div><div className="trend">↗ 12%</div></article><article><div className="stat-icon amber"><Icon name="target"/></div><div><span>Focus time</span><strong>{focusDisplay}</strong></div><div className="trend">Live</div></article><article><div className="stat-icon pink"><Icon name="chart"/></div><div><span>Daily progress</span><strong>{dailyProgress}<em>%</em></strong></div><div className="mini-bar"><i style={{ width: `${dailyProgress}%` }}/></div></article></section>
         <div className="workspace-grid">
           <section className="tasks-card card"><div className="section-heading"><div><h2>Today's tasks</h2><p>{todayTasks.filter(t => !t.done).length} tasks remaining</p></div></div><div className="filters">{["Today", "Completed"].map(item => <button onClick={() => setFilter(item)} className={filter === item ? "selected" : ""} key={item}>{item}</button>)}</div><div className="task-list">{visibleTasks.length ? visibleTasks.map(task => <div className={`task-row ${task.done ? "complete" : ""}`} key={task.id}><button className="checkbox" onClick={() => toggleTask(task.id)} aria-label={`Toggle ${task.title}`}>{task.done && "✓"}</button><div className="task-copy"><strong>{task.title}</strong><span><b className={`dot ${task.category.toLowerCase()}`}/>{task.category} <i>•</i> {task.due}</span></div><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><div className="task-actions"><button className="more" onClick={() => setTaskMenu(taskMenu === task.id ? null : task.id)} aria-label="Task options"><Icon name="more" size={20}/></button>{taskMenu === task.id && <div className="task-menu"><button onClick={() => toggleTask(task.id)}>{task.done ? "Mark active" : "Mark complete"}</button><button onClick={() => setTasks(tasks.filter(item => item.id !== task.id))}>Delete task</button></div>}</div></div>) : <p className="empty-tasks">No tasks for today. Plan one from the calendar or create a new task.</p>}</div></section>
-          <aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>Stay in the zone</p></div><button className="timer-menu"><Icon name="more"/></button></div><div className="timer-tabs">{(Object.keys(durations) as Array<keyof typeof durations>).map(item => <button onClick={() => changePeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className="timer-ring"><svg viewBox="0 0 190 190"><circle className="ring-track" cx="95" cy="95" r="82"/><circle className="ring-progress" cx="95" cy="95" r="82" style={{ strokeDashoffset: 515 - (515 * seconds / durations[period]) }}/></svg><div><strong>{time}</strong><span>{period === "Focus" ? "Focus session" : period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { setSeconds(durations[period]); setRunning(false); }}><Icon name="rotate" size={19}/></button><button className="start" onClick={() => setRunning(!running)}><Icon name={running ? "pause" : "play"} size={18}/>{running ? "Pause" : "Start focus"}</button></div><p className="session-note">🍅 <b>3</b> focus sessions completed today</p></section><section className="quote-card"><span>“</span><div className="quote-content" key={quoteIndex}><p>{quotes[quoteIndex].text}</p><small>— {quotes[quoteIndex].author}</small></div><div className="quote-controls"><button onClick={() => setQuoteIndex((quoteIndex - 1 + quotes.length) % quotes.length)} aria-label="Kutipan sebelumnya">←</button><div>{quotes.map((_, index) => <button key={index} className={index === quoteIndex ? "quote-dot active" : "quote-dot"} onClick={() => setQuoteIndex(index)} aria-label={`Kutipan ${index + 1}`}/>)}</div><button onClick={() => setQuoteIndex((quoteIndex + 1) % quotes.length)} aria-label="Kutipan selanjutnya">→</button></div></section></aside>
+          <aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>{activePeriod ? `${activePeriod} is running in the background` : "Stay in the zone"}</p></div><button className="timer-menu"><Icon name="more"/></button></div><div className="timer-tabs">{(Object.keys(durations) as Array<keyof typeof durations>).map(item => <button onClick={() => changePeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className="timer-ring"><svg viewBox="0 0 190 190"><circle className="ring-track" cx="95" cy="95" r="82"/><circle className="ring-progress" cx="95" cy="95" r="82" style={{ strokeDashoffset: 515 - (515 * seconds / durations[period]) }}/></svg><div><strong>{time}</strong><span>{period === "Focus" ? "Focus session" : period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { setTimerValues((current) => ({ ...current, [period]: durations[period] })); if (activePeriod === period) setActivePeriod(null); }}><Icon name="rotate" size={19}/></button><button className="start" onClick={() => setActivePeriod(activePeriod === period ? null : period)}><Icon name={activePeriod === period ? "pause" : "play"} size={18}/>{activePeriod === period ? "Pause" : activePeriod ? "Switch timer" : `Start ${period.toLowerCase()}`}</button></div><p className="session-note">🍅 <b>3</b> focus sessions completed today</p></section><section className="quote-card"><span>“</span><div className="quote-content" key={quoteIndex}><p>{quotes[quoteIndex].text}</p><small>— {quotes[quoteIndex].author}</small></div><div className="quote-controls"><button onClick={() => setQuoteIndex((quoteIndex - 1 + quotes.length) % quotes.length)} aria-label="Kutipan sebelumnya">←</button><div>{quotes.map((_, index) => <button key={index} className={index === quoteIndex ? "quote-dot active" : "quote-dot"} onClick={() => setQuoteIndex(index)} aria-label={`Kutipan ${index + 1}`}/>)}</div><button onClick={() => setQuoteIndex((quoteIndex + 1) % quotes.length)} aria-label="Kutipan selanjutnya">→</button></div></section></aside>
         </div></>}
       </main>{showTaskForm && <div className="modal-backdrop" onMouseDown={() => setShowTaskForm(false)}><form className="task-modal" onSubmit={addTask} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowTaskForm(false)}>×</button><p className="eyebrow">PLAN YOUR DAY</p><h2>New task</h2><label>Task title<input autoFocus value={taskTitle} onChange={event => setTaskTitle(event.target.value)} placeholder="What needs to be done?" /></label><label>Due date<input type="date" value={taskDate} disabled={taskDate === jakartaDate()} onChange={event => setTaskDate(event.target.value)} /></label><label>Priority<select value={taskPriority} onChange={event => setTaskPriority(event.target.value as Task["priority"])}><option>Low</option><option>Medium</option><option>High</option></select></label><button className="new-task" type="submit"><Icon name="plus" size={18}/>Add task</button></form></div>}
     </div>
