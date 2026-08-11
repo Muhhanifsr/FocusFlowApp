@@ -9,10 +9,23 @@ type Task = {
   priority: "High" | "Medium" | "Low";
   done: boolean;
   date: string;
+  createdAt?: string;
+  completedAt?: string;
 };
 
 const initialTasks: Task[] = [];
 const jakartaDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+const shiftDate = (date: string, days: number) => { const next = new Date(`${date}T00:00:00`); next.setDate(next.getDate() + days); return next.toLocaleDateString("en-CA"); };
+const dayLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const sheetsWebhook = import.meta.env.VITE_GOOGLE_SHEETS_WEB_APP_URL as string | undefined;
+
+function syncGoogleSheets(tasks: Task[], focusSeconds: number) {
+  if (!sheetsWebhook) return;
+  const today = jakartaDate();
+  const todayTasks = tasks.filter(task => task.date === today);
+  const completed = todayTasks.filter(task => task.done).length;
+  void fetch(sheetsWebhook, { method: "POST", mode: "no-cors", body: new URLSearchParams({ payload: JSON.stringify({ tasks, insight: { date: today, totalTasks: todayTasks.length, completedTasks: completed, completionRate: todayTasks.length ? Math.round(completed / todayTasks.length * 100) : 0, focusSeconds, syncedAt: new Date().toISOString() } }) }) });
+}
 
 const Icon = ({ name, size = 20 }: { name: string; size?: number }) => {
   const paths: Record<string, React.ReactNode> = {
@@ -49,18 +62,27 @@ function CalendarView({ tasks, openNewTask }: { tasks: Task[]; openNewTask: (dat
 }
 
 function InsightsView({ tasks, streak, focusSeconds }: { tasks: Task[]; streak: number; focusSeconds: number }) {
-  const todayTasks = tasks.filter(task => task.date === jakartaDate());
+  const today = jakartaDate();
+  const todayTasks = tasks.filter(task => task.date === today);
   const completed = todayTasks.filter(task => task.done).length;
   const rate = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0;
   const focusDisplay = focusSeconds >= 3600 ? `${Math.floor(focusSeconds / 3600)}h ${Math.floor((focusSeconds % 3600) / 60)}m` : `${Math.floor(focusSeconds / 60)}m`;
   const [range, setRange] = useState("This week");
-  const labels = range === "This week" ? ["Mon","Tue","Wed","Thu","Fri","Sat","Today"] : range === "This month" ? ["Week 1","Week 2","Week 3","Week 4","Today"] : ["Jan","Mar","May","Jul","Sep","Nov","Now"];
-  const values = labels.map((_, index) => index === labels.length - 1 ? rate : [42, 70, 55, 88, 66, 35, 62][index] ?? 60);
-  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">YOUR PRODUCTIVITY</p><h1>Insights</h1><p className="subtitle">See your real-time daily progress and build better habits.</p></div><select className="period-select" value={range} onChange={event => setRange(event.target.value)}><option>This week</option><option>This month</option><option>This year</option></select></div><div className="insight-grid"><article className="insight-main card"><div><h2>Daily completion</h2><p className="muted">Tasks finished during {range.toLowerCase()}</p></div><div className="bar-chart">{values.map((value, index) => <div className={index === values.length - 1 ? "chart-day active" : "chart-day"} key={labels[index]}><i style={{ height: `${value}%` }}/><span>{labels[index]}</span></div>)}</div></article><article className="completion-card card"><div className="completion-ring" style={{ background: `conic-gradient(#7455dc ${rate * 3.6}deg, #f0edf5 0deg)` }}><span>{rate}%</span></div><h2>Today's progress</h2><p className="muted">{completed} of {todayTasks.length} tasks completed</p></article></div><div className="insight-summary card"><div><span>Focus time today</span><strong>{focusDisplay}</strong></div><div><span>Tasks created today</span><strong>{todayTasks.length}</strong></div><div><span>Completion rate</span><strong>{rate}%</strong></div><div><span>Current streak</span><strong>{streak} day{streak === 1 ? "" : "s"} {streak > 0 ? "🔥" : ""}</strong></div></div></section>;
+  const chartDates = useMemo(() => {
+    if (range === "This week") return Array.from({ length: 7 }, (_, index) => shiftDate(today, index - 6));
+    if (range === "This month") { const start = `${today.slice(0, 8)}01`; const result: string[] = []; for (let day = start; day <= today; day = shiftDate(day, 1)) result.push(day); return result; }
+    return Array.from({ length: 12 }, (_, index) => `${today.slice(0, 4)}-${String(index + 1).padStart(2, "0")}`);
+  }, [range, today]);
+  const chartData = chartDates.map(key => {
+    const matching = range === "This year" ? tasks.filter(task => task.date.startsWith(key)) : tasks.filter(task => task.date === key);
+    const done = matching.filter(task => task.done).length;
+    return { key, value: matching.length ? Math.round(done / matching.length * 100) : 0, hasTasks: matching.length > 0, label: range === "This year" ? new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", { month: "short" }) : dayLabel(key) };
+  });
+  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">YOUR PRODUCTIVITY</p><h1>Insights</h1><p className="subtitle">Completion data follows the tasks and dates in your calendar.</p></div><select className="period-select" value={range} onChange={event => setRange(event.target.value)}><option>This week</option><option>This month</option><option>This year</option></select></div><div className="insight-grid"><article className="insight-main card"><div><h2>Daily completion</h2><p className="muted">Only days with planned tasks show a bar.</p></div><div className={`bar-chart ${chartData.length > 12 ? "dense" : ""}`}>{chartData.map((item, index) => <div className={index === chartData.length - 1 ? "chart-day active" : "chart-day"} key={item.key}>{item.hasTasks && <i style={{ height: `${item.value}%` }} title={`${item.label}: ${item.value}%`} />}<span>{item.label}</span></div>)}</div></article><article className="completion-card card"><div className="completion-ring" style={{ background: `conic-gradient(#7455dc ${rate * 3.6}deg, #f0edf5 0deg)` }}><span>{rate}%</span></div><h2>Today's progress</h2><p className="muted">{completed} of {todayTasks.length} tasks completed</p></article></div><div className="insight-summary card"><div><span>Focus time today</span><strong>{focusDisplay}</strong></div><div><span>Tasks created today</span><strong>{todayTasks.length}</strong></div><div><span>Completion rate</span><strong>{rate}%</strong></div><div><span>Current streak</span><strong>{streak} day{streak === 1 ? "" : "s"} {streak > 0 ? "🔥" : ""}</strong></div></div></section>;
 }
 
 function SettingsView({ darkMode, setDarkMode }: { darkMode: boolean; setDarkMode: (value: boolean) => void }) {
-  return <section className="page-panel settings-page"><div className="page-heading"><div><p className="eyebrow">PERSONALIZE FOCUSFLOW</p><h1>Settings</h1><p className="subtitle">Set up your workspace exactly the way you need it.</p></div></div><div className="settings-card card"><div className="setting-row"><div><strong>Appearance</strong><span>Choose a theme that feels comfortable.</span></div><button className={darkMode ? "theme-toggle on" : "theme-toggle"} onClick={() => setDarkMode(!darkMode)} aria-label="Ganti mode terang atau gelap"><span className="theme-track"><i/></span><b>{darkMode ? "Dark mode" : "Light mode"}</b></button></div><div className="setting-row"><div><strong>Pomodoro focus duration</strong><span>Default duration for each focus session.</span></div><button className="setting-value">25 minutes <Icon name="down" size={15}/></button></div><div className="setting-row"><div><strong>Google Sheets</strong><span>Open your connected spreadsheet for task records.</span></div><a className="sheet-link" href="https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing" target="_blank" rel="noreferrer">Open spreadsheet ↗</a></div><div className="setting-row"><div><strong>Daily reminder</strong><span>Reminder to plan your day at 08:00.</span></div><button className="switch on" aria-label="Daily reminder"><i/></button></div></div></section>;
+  return <section className="page-panel settings-page"><div className="page-heading"><div><p className="eyebrow">PERSONALIZE FOCUSFLOW</p><h1>Settings</h1><p className="subtitle">Set up your workspace exactly the way you need it.</p></div></div><div className="settings-card card"><div className="setting-row"><div><strong>Appearance</strong><span>Choose a theme that feels comfortable.</span></div><button className={darkMode ? "theme-toggle on" : "theme-toggle"} onClick={() => setDarkMode(!darkMode)} aria-label="Ganti mode terang atau gelap"><span className="theme-track"><i/></span><b>{darkMode ? "Dark mode" : "Light mode"}</b></button></div><div className="setting-row"><div><strong>Google Sheets</strong><span>Open the task and insight records spreadsheet.</span></div><a className="sheet-link" href="https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing" target="_blank" rel="noreferrer">Open spreadsheet ↗</a></div><div className="setting-row"><div><strong>Daily reminder</strong><span>Reminder to plan your day at 08:00.</span></div><button className="switch on" aria-label="Daily reminder"><i/></button></div></div></section>;
 }
 
 function App() {
@@ -113,7 +135,7 @@ function App() {
   }, [quotes.length]);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
-  useEffect(() => { localStorage.setItem("focusflow-tasks", JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem("focusflow-tasks", JSON.stringify(tasks)); syncGoogleSheets(tasks, focusSeconds); }, [tasks]);
 
   useEffect(() => {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
@@ -133,11 +155,11 @@ function App() {
   const seconds = timerValues[period];
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
-  function toggleTask(id: number) { setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task)); }
+  function toggleTask(id: number) { setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done, completedAt: !task.done ? new Date().toISOString() : undefined } : task)); }
   function addTask(event: FormEvent) {
     event.preventDefault();
     if (!taskTitle.trim()) return;
-    setTasks((current) => [...current, { id: Date.now(), title: taskTitle.trim(), category: "Personal", due: taskDate === jakartaDate() ? "Today" : new Date(`${taskDate}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }), priority: taskPriority, done: false, date: taskDate }]);
+    setTasks((current) => [...current, { id: Date.now(), title: taskTitle.trim(), category: "Personal", due: taskDate === jakartaDate() ? "Today" : new Date(`${taskDate}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }), priority: taskPriority, done: false, date: taskDate, createdAt: new Date().toISOString() }]);
     setTaskTitle("");
     setTaskPriority("Medium");
     setShowTaskForm(false);
