@@ -1,196 +1,89 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-type Task = {
-  id: number;
-  title: string;
-  category: string;
-  due: string;
-  priority: "High" | "Medium" | "Low";
-  done: boolean;
-  date: string;
-  createdAt?: string;
-  completedAt?: string;
-};
+type Priority = "High" | "Medium" | "Low";
+type Period = "Focus" | "Short Break" | "Long Break";
+type Task = { id: number; title: string; category: string; priority: Priority; done: boolean; date: string; reminderAt?: string; createdAt: string; completedAt?: string };
 
-const initialTasks: Task[] = [];
+const TASK_STORAGE_KEY = "focusflow-tasks";
+const SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_WEB_APP_URL as string | undefined;
+const SHEET_LINK = "https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing";
+const DURATIONS: Record<Period, number> = { Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 };
+const QUOTES = [
+  { text: "The key is not to prioritize what's on your schedule, but to schedule your priorities.", author: "Stephen Covey" },
+  { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
+  { text: "It always seems impossible until it's done.", author: "Nelson Mandela" },
+];
+
 const jakartaDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
-const shiftDate = (date: string, days: number) => { const next = new Date(`${date}T00:00:00`); next.setDate(next.getDate() + days); return next.toLocaleDateString("en-CA"); };
-const dayLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const sheetsWebhook = import.meta.env.VITE_GOOGLE_SHEETS_WEB_APP_URL as string | undefined;
+const dateLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const shortDateLabel = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const shiftDate = (date: string, days: number) => { const value = new Date(`${date}T00:00:00`); value.setDate(value.getDate() + days); return value.toLocaleDateString("en-CA"); };
+const taskDateDescription = (date: string, today = jakartaDate()) => date === today ? "Today" : date === shiftDate(today, 1) ? "Tomorrow" : dateLabel(date);
+const focusTimeLabel = (seconds: number) => seconds >= 3600 ? `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m` : `${Math.floor(seconds / 60)}m`;
 
 function syncGoogleSheets(tasks: Task[], focusSeconds: number) {
-  if (!sheetsWebhook) return;
+  if (!SHEETS_URL) return;
   const today = jakartaDate();
-  const todayTasks = tasks.filter(task => task.date === today);
-  const completed = todayTasks.filter(task => task.done).length;
-  void fetch(sheetsWebhook, { method: "POST", mode: "no-cors", body: new URLSearchParams({ payload: JSON.stringify({ tasks, insight: { date: today, totalTasks: todayTasks.length, completedTasks: completed, completionRate: todayTasks.length ? Math.round(completed / todayTasks.length * 100) : 0, focusSeconds, syncedAt: new Date().toISOString() } }) }) });
+  const todayTasks = tasks.filter((task) => task.date === today);
+  const completedTasks = todayTasks.filter((task) => task.done).length;
+  const payload = { tasks, insight: { date: today, totalTasks: todayTasks.length, completedTasks, completionRate: todayTasks.length ? Math.round((completedTasks / todayTasks.length) * 100) : 0, focusSeconds, syncedAt: new Date().toISOString() } };
+  void fetch(SHEETS_URL, { method: "POST", mode: "no-cors", body: new URLSearchParams({ payload: JSON.stringify(payload) }) });
+}
+
+function streakFromTasks(tasks: Task[]) {
+  const createdDates = new Set(tasks.map((task) => task.createdAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date(task.createdAt)) : undefined).filter(Boolean));
+  let streak = 0;
+  let cursor = jakartaDate();
+  while (createdDates.has(cursor)) { streak += 1; cursor = shiftDate(cursor, -1); }
+  return streak;
 }
 
 const Icon = ({ name, size = 20 }: { name: string; size?: number }) => {
   const paths: Record<string, React.ReactNode> = {
     grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
-    check: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>,
-    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
-    chart: <><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V7M17 16v-8"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.1h-3v-.1A1.7 1.7 0 0 0 10.7 18.6a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15 1.7 1.7 0 0 0 5.5 14H5.4v-3h.1A1.7 1.7 0 0 0 7.06 10a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06A1.7 1.7 0 0 0 10.7 6.36 1.7 1.7 0 0 0 11.73 4.8v-.1h3v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06A1.7 1.7 0 0 0 19.4 10 1.7 1.7 0 0 0 21 11h.1v3H21A1.7 1.7 0 0 0 19.4 15Z"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    play: <path d="m8 5 11 7-11 7V5Z" fill="currentColor" stroke="none"/>,
-    pause: <><path d="M8 5v14M16 5v14"/></>,
-    rotate: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></>,
-    more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></>,
-    target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></>,
-    down: <path d="m6 9 6 6 6-6"/>,
-    user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
-    menu: <><path d="M4 7h16M4 12h16M4 17h16"/></>,
+    check: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>, calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>, chart: <><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V7M17 16v-8"/></>, settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56v.1h-3v-.1A1.7 1.7 0 0 0 10.7 18.6a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15 1.7 1.7 0 0 0 5.5 14H5.4v-3h.1A1.7 1.7 0 0 0 7.06 10a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06A1.7 1.7 0 0 0 11.73 4.8v-.1h3v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06A1.7 1.7 0 0 0 21 11h.1v3H21A1.7 1.7 0 0 0 19.4 15Z"/></>,
+    plus: <path d="M12 5v14M5 12h14"/>, play: <path d="m8 5 11 7-11 7V5Z" fill="currentColor" stroke="none"/>, pause: <><path d="M8 5v14M16 5v14"/></>, rotate: <><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></>, more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></>, target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></>, menu: <path d="M4 7h16M4 12h16M4 17h16"/>, bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 };
 
+function AnimeMark() { return <div className="anime-mark" aria-label="Focus companion"><span className="anime-hair"/><span className="anime-face"><i/><i/></span><b>✦</b></div>; }
+
 function CalendarView({ tasks, openNewTask }: { tasks: Task[]; openNewTask: (date: string) => void }) {
-  const now = new Date();
-  const [cursor, setCursor] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
-  const [selected, setSelected] = useState(now.getDate());
-  const year = cursor.getFullYear(), month = cursor.getMonth();
-  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
-  const days = Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1);
-  const label = cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const selectedLabel = new Date(year, month, selected).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-  const selectedDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(selected).padStart(2, "0")}`;
-  const datedTasks = tasks.filter(task => task.date === selectedDate);
-  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">PLAN WITH INTENTION</p><h1>Calendar</h1><p className="subtitle">Choose a date to view and plan your tasks.</p></div><button className="new-task" onClick={() => openNewTask(selectedDate)}><Icon name="plus" size={18}/>Add task</button></div><div className="calendar-layout"><div className="calendar-card card"><div className="calendar-title"><button onClick={() => setCursor(new Date(year, month - 1, 1))}>‹</button><h2>{label}</h2><button onClick={() => setCursor(new Date(year, month + 1, 1))}>›</button></div><input className="date-jump" type="month" value={`${year}-${String(month + 1).padStart(2, "0")}`} onChange={event => { const [nextYear, nextMonth] = event.target.value.split("-").map(Number); setCursor(new Date(nextYear, nextMonth - 1, 1)); }} /><div className="weekday-row">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => <span key={day}>{day}</span>)}</div><div className="month-grid">{Array.from({ length: firstDay }).map((_, index) => <i key={`blank-${index}`}/>)}{days.map(day => { const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`; return <button onClick={() => setSelected(day)} className={day === selected ? "today" : tasks.some(task => task.date === date) ? "has-item" : ""} key={day}>{day}</button>})}</div></div><aside className="agenda-card card"><h2>{selectedLabel}</h2><p className="muted">Tasks for this date</p>{datedTasks.length ? datedTasks.map(task => <div className="agenda-item" key={task.id}><b className={`dot ${task.category.toLowerCase()}`}/><div><strong>{task.title}</strong><span>{task.due}</span></div></div>) : <p className="empty-agenda">No tasks planned yet.</p>}<button className="add-agenda" onClick={() => openNewTask(selectedDate)}><Icon name="plus" size={16}/>Add task</button></aside></div></section>;
+  const today = jakartaDate(); const [cursor, setCursor] = useState(() => new Date(`${today}T00:00:00`)); const [selectedDate, setSelectedDate] = useState(today);
+  const year = cursor.getFullYear(), month = cursor.getMonth(); const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
+  const days = Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1); const selectedTasks = tasks.filter((task) => task.date === selectedDate);
+  const moveMonth = (amount: number) => { const next = new Date(year, month + amount, 1); setCursor(next); setSelectedDate(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`); };
+  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">PLAN WITH INTENTION</p><h1>Calendar</h1><p className="subtitle">Task tersimpan pada tanggalnya dan akan dikirim ke spreadsheet.</p></div><button className="new-task" onClick={() => openNewTask(selectedDate)}><Icon name="plus" size={18}/>Add task</button></div><div className="calendar-layout"><div className="calendar-card card"><div className="calendar-title"><button onClick={() => moveMonth(-1)} aria-label="Bulan sebelumnya">‹</button><h2>{cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h2><button onClick={() => moveMonth(1)} aria-label="Bulan berikutnya">›</button></div><input className="date-jump" aria-label="Pilih bulan" type="month" value={`${year}-${String(month + 1).padStart(2, "0")}`} onChange={(event) => { const [nextYear, nextMonth] = event.target.value.split("-").map(Number); const next = new Date(nextYear, nextMonth - 1, 1); setCursor(next); setSelectedDate(event.target.value + "-01"); }}/><div className="weekday-row">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <span key={day}>{day}</span>)}</div><div className="month-grid">{Array.from({ length: firstDay }).map((_, index) => <i key={`blank-${index}`}/>)}{days.map((day) => { const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`; const count = tasks.filter((task) => task.date === date).length; return <button onClick={() => setSelectedDate(date)} className={`${date === selectedDate ? "selected-day" : ""} ${date === today ? "current-day" : ""} ${count ? "has-item" : ""}`} key={date}>{day}{count > 0 && <small>{count}</small>}</button>; })}</div></div><aside className="agenda-card card"><h2>{taskDateDescription(selectedDate)}</h2><p className="muted">{dateLabel(selectedDate)} · {selectedTasks.length} task</p>{selectedTasks.length ? selectedTasks.map((task) => <div className="agenda-item" key={task.id}><b className="dot personal"/><div><strong>{task.title}</strong><span>{task.done ? "Completed" : task.reminderAt ? `Reminder ${task.reminderAt}` : "No reminder"}</span></div></div>) : <p className="empty-agenda">Tidak ada task untuk {taskDateDescription(selectedDate).toLowerCase()}.</p>}<button className="add-agenda" onClick={() => openNewTask(selectedDate)}><Icon name="plus" size={16}/>Add task for this date</button></aside></div></section>;
 }
 
-function InsightsView({ tasks, streak, focusSeconds }: { tasks: Task[]; streak: number; focusSeconds: number }) {
-  const today = jakartaDate();
-  const todayTasks = tasks.filter(task => task.date === today);
-  const completed = todayTasks.filter(task => task.done).length;
-  const rate = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0;
-  const focusDisplay = focusSeconds >= 3600 ? `${Math.floor(focusSeconds / 3600)}h ${Math.floor((focusSeconds % 3600) / 60)}m` : `${Math.floor(focusSeconds / 60)}m`;
-  const [range, setRange] = useState("This week");
-  const chartDates = useMemo(() => {
-    if (range === "This week") return Array.from({ length: 7 }, (_, index) => shiftDate(today, index - 6));
-    if (range === "This month") { const start = `${today.slice(0, 8)}01`; const result: string[] = []; for (let day = start; day <= today; day = shiftDate(day, 1)) result.push(day); return result; }
-    return Array.from({ length: 12 }, (_, index) => `${today.slice(0, 4)}-${String(index + 1).padStart(2, "0")}`);
-  }, [range, today]);
-  const chartData = chartDates.map(key => {
-    const matching = range === "This year" ? tasks.filter(task => task.date.startsWith(key)) : tasks.filter(task => task.date === key);
-    const done = matching.filter(task => task.done).length;
-    return { key, value: matching.length ? Math.round(done / matching.length * 100) : 0, hasTasks: matching.length > 0, label: range === "This year" ? new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", { month: "short" }) : dayLabel(key) };
-  });
-  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">YOUR PRODUCTIVITY</p><h1>Insights</h1><p className="subtitle">Completion data follows the tasks and dates in your calendar.</p></div><select className="period-select" value={range} onChange={event => setRange(event.target.value)}><option>This week</option><option>This month</option><option>This year</option></select></div><div className="insight-grid"><article className="insight-main card"><div><h2>Daily completion</h2><p className="muted">Only days with planned tasks show a bar.</p></div><div className={`bar-chart ${chartData.length > 12 ? "dense" : ""}`}>{chartData.map((item, index) => <div className={index === chartData.length - 1 ? "chart-day active" : "chart-day"} key={item.key}>{item.hasTasks && <i style={{ height: `${item.value}%` }} title={`${item.label}: ${item.value}%`} />}<span>{item.label}</span></div>)}</div></article><article className="completion-card card"><div className="completion-ring" style={{ background: `conic-gradient(#7455dc ${rate * 3.6}deg, #f0edf5 0deg)` }}><span>{rate}%</span></div><h2>Today's progress</h2><p className="muted">{completed} of {todayTasks.length} tasks completed</p></article></div><div className="insight-summary card"><div><span>Focus time today</span><strong>{focusDisplay}</strong></div><div><span>Tasks created today</span><strong>{todayTasks.length}</strong></div><div><span>Completion rate</span><strong>{rate}%</strong></div><div><span>Current streak</span><strong>{streak} day{streak === 1 ? "" : "s"} {streak > 0 ? "🔥" : ""}</strong></div></div></section>;
+function InsightsView({ tasks, focusSeconds }: { tasks: Task[]; focusSeconds: number }) {
+  const today = jakartaDate(); const todayTasks = tasks.filter((task) => task.date === today); const completed = todayTasks.filter((task) => task.done).length; const rate = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const [range, setRange] = useState("This week");
+  const chartDates = useMemo(() => range === "This week" ? Array.from({ length: 7 }, (_, index) => shiftDate(today, index - 6)) : range === "This month" ? Array.from({ length: Number(today.slice(-2)) }, (_, index) => `${today.slice(0, 8)}${String(index + 1).padStart(2, "0")}`) : Array.from({ length: 12 }, (_, index) => `${today.slice(0, 4)}-${String(index + 1).padStart(2, "0")}`), [range, today]);
+  const chartData = chartDates.map((key) => { const matching = range === "This year" ? tasks.filter((task) => task.date.startsWith(key)) : tasks.filter((task) => task.date === key); const done = matching.filter((task) => task.done).length; const value = matching.length ? Math.min(100, Math.round((done / matching.length) * 100)) : 0; return { key, value, count: matching.length, label: range === "This year" ? new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", { month: "short" }) : shortDateLabel(key) }; });
+  const streak = streakFromTasks(tasks);
+  return <section className="page-panel"><div className="page-heading"><div><p className="eyebrow">YOUR PRODUCTIVITY</p><h1>Insights</h1><p className="subtitle">Completion dihitung dari jumlah task yang dibuat pada setiap tanggal.</p></div><select className="period-select" value={range} onChange={(event) => setRange(event.target.value)}><option>This week</option><option>This month</option><option>This year</option></select></div><div className="insight-grid"><article className="insight-main card"><div><h2>Daily completion</h2><p className="muted">Tinggi batang = task selesai ÷ total task (maks. 100%).</p></div><div className={`bar-chart ${chartData.length > 12 ? "dense" : ""}`}>{chartData.map((item) => <div className={item.key === today ? "chart-day active" : "chart-day"} key={item.key}>{item.count > 0 && <i style={{ height: `${item.value}%` }} title={`${item.label}: ${item.value}% (${item.count} task)`}/>}<span>{item.label}</span></div>)}</div></article><article className="completion-card card"><div className="completion-ring" style={{ background: `conic-gradient(#7455dc ${rate * 3.6}deg, #f0edf5 0deg)` }}><span>{rate}%</span></div><h2>Today's progress</h2><p className="muted">{completed} of {todayTasks.length} tasks completed</p></article></div><div className="insight-summary card"><div><span>Focus time today</span><strong>{focusTimeLabel(focusSeconds)}</strong></div><div><span>Tasks planned today</span><strong>{todayTasks.length}</strong></div><div><span>Completion rate</span><strong>{rate}%</strong></div><div><span>Creation streak</span><strong>{streak} day{streak === 1 ? "" : "s"} {streak > 0 ? "🔥" : ""}</strong></div></div></section>;
 }
 
-function SettingsView({ darkMode, setDarkMode }: { darkMode: boolean; setDarkMode: (value: boolean) => void }) {
-  return <section className="page-panel settings-page"><div className="page-heading"><div><p className="eyebrow">PERSONALIZE FOCUSFLOW</p><h1>Settings</h1><p className="subtitle">Set up your workspace exactly the way you need it.</p></div></div><div className="settings-card card"><div className="setting-row"><div><strong>Appearance</strong><span>Choose a theme that feels comfortable.</span></div><button className={darkMode ? "theme-toggle on" : "theme-toggle"} onClick={() => setDarkMode(!darkMode)} aria-label="Ganti mode terang atau gelap"><span className="theme-track"><i/></span><b>{darkMode ? "Dark mode" : "Light mode"}</b></button></div><div className="setting-row"><div><strong>Google Sheets</strong><span>Open the task and insight records spreadsheet.</span></div><a className="sheet-link" href="https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing" target="_blank" rel="noreferrer">Open spreadsheet ↗</a></div><div className="setting-row"><div><strong>Daily reminder</strong><span>Reminder to plan your day at 08:00.</span></div><button className="switch on" aria-label="Daily reminder"><i/></button></div></div></section>;
-}
+function SettingsView({ darkMode, setDarkMode }: { darkMode: boolean; setDarkMode: (value: boolean) => void }) { return <section className="page-panel settings-page"><div className="page-heading"><div><p className="eyebrow">PERSONALIZE FOCUSFLOW</p><h1>Settings</h1><p className="subtitle">Set up your workspace exactly the way you need it.</p></div></div><div className="settings-card card"><div className="setting-row"><div><strong>Appearance</strong><span>Choose a theme that feels comfortable.</span></div><button className={darkMode ? "theme-toggle on" : "theme-toggle"} onClick={() => setDarkMode(!darkMode)}><span className="theme-track"><i/></span><b>{darkMode ? "Dark mode" : "Light mode"}</b></button></div><div className="setting-row"><div><strong>Google Sheets</strong><span>Open task and insight records.</span></div><a className="sheet-link" href={SHEET_LINK} target="_blank" rel="noreferrer">Open spreadsheet ↗</a></div></div></section>; }
 
 function App() {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try { return JSON.parse(localStorage.getItem("focusflow-tasks") || "null") || initialTasks; } catch { return initialTasks; }
-  });
-  const [filter, setFilter] = useState("Today");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskPriority, setTaskPriority] = useState<Task["priority"]>("Medium");
-  const [taskDate, setTaskDate] = useState(jakartaDate());
-  const [period, setPeriod] = useState<"Focus" | "Short Break" | "Long Break">("Focus");
-  const [activePeriod, setActivePeriod] = useState<"Focus" | "Short Break" | "Long Break" | null>(null);
-  const [timerValues, setTimerValues] = useState({ Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 });
-  const [quoteIndex, setQuoteIndex] = useState(0);
-  const [page, setPage] = useState<"overview" | "calendar" | "insights" | "settings">("overview");
-  const [darkMode, setDarkMode] = useState(false);
-  const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskMenu, setTaskMenu] = useState<number | null>(null);
-  const [streak, setStreak] = useState(0);
-  const [mobileNav, setMobileNav] = useState(false);
-  const [focusSeconds, setFocusSeconds] = useState(0);
-  const jakartaHour = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", hour12: false }).format(new Date());
-  const greeting = Number(jakartaHour) < 12 ? "Good morning" : Number(jakartaHour) < 18 ? "Good afternoon" : "Good evening";
-  const quotes = [
-    { text: "The key is not to prioritize what's on your schedule, but to schedule your priorities.", author: "Stephen Covey" },
-    { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
-    { text: "It always seems impossible until it's done.", author: "Nelson Mandela" },
-  ];
-
-  const durations = { Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 };
-  useEffect(() => {
-    if (!activePeriod) return;
-    const timer = window.setInterval(() => setTimerValues((current) => {
-      const value = current[activePeriod];
-      if (value <= 1) { setActivePeriod(null); return { ...current, [activePeriod]: durations[activePeriod] }; }
-      return { ...current, [activePeriod]: value - 1 };
-    }), 1000);
-    return () => window.clearInterval(timer);
-  }, [activePeriod]);
-
-  useEffect(() => {
-    if (activePeriod !== "Focus") return;
-    const tracker = window.setInterval(() => setFocusSeconds((current) => current + 1), 1000);
-    return () => window.clearInterval(tracker);
-  }, [activePeriod]);
-
-  useEffect(() => {
-    const carousel = window.setInterval(() => setQuoteIndex((current) => (current + 1) % quotes.length), 5500);
-    return () => window.clearInterval(carousel);
-  }, [quotes.length]);
-
+  const [tasks, setTasks] = useState<Task[]>(() => { try { return JSON.parse(localStorage.getItem(TASK_STORAGE_KEY) || "[]"); } catch { return []; } }); const [filter, setFilter] = useState("Today"); const [taskTitle, setTaskTitle] = useState(""); const [taskPriority, setTaskPriority] = useState<Priority>("Low"); const [taskDate, setTaskDate] = useState(jakartaDate()); const [reminderAt, setReminderAt] = useState(""); const [period, setPeriod] = useState<Period>("Focus"); const [activePeriod, setActivePeriod] = useState<Period | null>(null); const [timerValues, setTimerValues] = useState(DURATIONS); const [quoteIndex, setQuoteIndex] = useState(0); const [page, setPage] = useState<"overview" | "calendar" | "insights" | "settings">("overview"); const [darkMode, setDarkMode] = useState(false); const [showTaskForm, setShowTaskForm] = useState(false); const [taskMenu, setTaskMenu] = useState<number | null>(null); const [mobileNav, setMobileNav] = useState(false); const [focusSeconds, setFocusSeconds] = useState(0); const [notificationReady, setNotificationReady] = useState(() => "Notification" in window && Notification.permission === "granted"); const [reminderToast, setReminderToast] = useState<Task | null>(null);
+  const today = jakartaDate(); const todayTasks = useMemo(() => tasks.filter((task) => task.date === today), [tasks, today]); const visibleTasks = filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks; const completed = todayTasks.filter((task) => task.done).length; const progress = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const seconds = timerValues[period]; const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const closeTaskForm = () => { setShowTaskForm(false); setReminderAt(""); setTaskPriority("Low"); };
+  useEffect(() => { if (!activePeriod) return; const timer = window.setInterval(() => setTimerValues((values) => { const value = values[activePeriod]; if (value <= 1) { setActivePeriod(null); return { ...values, [activePeriod]: DURATIONS[activePeriod] }; } return { ...values, [activePeriod]: value - 1 }; }), 1000); return () => window.clearInterval(timer); }, [activePeriod]);
+  useEffect(() => { if (activePeriod !== "Focus") return; const tracker = window.setInterval(() => setFocusSeconds((value) => value + 1), 1000); return () => window.clearInterval(tracker); }, [activePeriod]);
+  useEffect(() => { const carousel = window.setInterval(() => setQuoteIndex((value) => (value + 1) % QUOTES.length), 5500); return () => window.clearInterval(carousel); }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
-  useEffect(() => { localStorage.setItem("focusflow-tasks", JSON.stringify(tasks)); syncGoogleSheets(tasks, focusSeconds); }, [tasks]);
-
-  useEffect(() => {
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
-    const stored = JSON.parse(localStorage.getItem("focusflow-activity") || "[]") as string[];
-    const activeDays = [...new Set([...stored, today])].sort().slice(-365);
-    localStorage.setItem("focusflow-activity", JSON.stringify(activeDays));
-    let count = 0, cursor = new Date(`${today}T00:00:00`);
-    while (activeDays.includes(cursor.toLocaleDateString("en-CA"))) { count++; cursor.setDate(cursor.getDate() - 1); }
-    setStreak(count);
-  }, []);
-
-  const todayTasks = useMemo(() => tasks.filter((task) => task.date === jakartaDate()), [tasks]);
-  const visibleTasks = useMemo(() => filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks, [filter, todayTasks]);
-  const completed = todayTasks.filter((task) => task.done).length;
-  const dailyProgress = todayTasks.length ? Math.round(completed / todayTasks.length * 100) : 0;
-  const focusDisplay = focusSeconds >= 3600 ? `${Math.floor(focusSeconds / 3600)}h ${Math.floor((focusSeconds % 3600) / 60)}m` : `${Math.floor(focusSeconds / 60)}m`;
-  const seconds = timerValues[period];
-  const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-
+  useEffect(() => { localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks)); syncGoogleSheets(tasks, focusSeconds); }, [tasks]);
+  useEffect(() => { if (focusSeconds > 0 && focusSeconds % 30 === 0) syncGoogleSheets(tasks, focusSeconds); }, [focusSeconds, tasks]);
+  useEffect(() => { if (!notificationReady) return; const timers = tasks.filter((task) => !task.done && task.reminderAt).map((task) => { const delay = new Date(`${task.date}T${task.reminderAt}:00`).getTime() - Date.now(); return delay > 0 && delay < 2_147_000_000 ? window.setTimeout(() => { new Notification("FocusFlow · Task reminder", { body: `Saatnya mengerjakan: ${task.title}`, icon: "/vite.svg", tag: `focusflow-task-${task.id}`, requireInteraction: true }); setReminderToast(task); }, delay) : undefined; }).filter((timer): timer is number => timer !== undefined); return () => timers.forEach(window.clearTimeout); }, [notificationReady, tasks]);
+  useEffect(() => { if (!reminderToast) return; const timer = window.setTimeout(() => setReminderToast(null), 10000); return () => window.clearTimeout(timer); }, [reminderToast]);
+  function addTask(event: FormEvent) { event.preventDefault(); if (!taskTitle.trim()) return; const createdAt = new Date().toISOString(); const task: Task = { id: Date.now(), title: taskTitle.trim(), category: "Personal", priority: taskPriority, done: false, date: taskDate, reminderAt: reminderAt || undefined, createdAt }; if (reminderAt && "Notification" in window && Notification.permission === "default") void Notification.requestPermission().then((permission) => setNotificationReady(permission === "granted")); setTasks((current) => [...current, task]); setTaskTitle(""); closeTaskForm(); }
   function toggleTask(id: number) { setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done, completedAt: !task.done ? new Date().toISOString() : undefined } : task)); }
-  function addTask(event: FormEvent) {
-    event.preventDefault();
-    if (!taskTitle.trim()) return;
-    setTasks((current) => [...current, { id: Date.now(), title: taskTitle.trim(), category: "Personal", due: taskDate === jakartaDate() ? "Today" : new Date(`${taskDate}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }), priority: taskPriority, done: false, date: taskDate, createdAt: new Date().toISOString() }]);
-    setTaskTitle("");
-    setTaskPriority("Medium");
-    setShowTaskForm(false);
-  }
-  function changePeriod(next: "Focus" | "Short Break" | "Long Break") { setPeriod(next); }
-
-  return (
-    <div className="app-shell">
-      <button className="mobile-menu-button" onClick={() => setMobileNav(!mobileNav)} aria-label="Buka navigasi"><Icon name="menu" size={23}/></button>
-      {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
-      <aside className={mobileNav ? "sidebar mobile-open" : "sidebar"}>
-        <div className="brand"><span className="brand-mark"><span /></span><span>focusflow</span></div>
-        <nav className="main-nav">
-          <button onClick={() => { setPage("overview"); setMobileNav(false); }} className={page === "overview" ? "nav-item active" : "nav-item"}><Icon name="grid"/>Overview</button>
-          <button onClick={() => { setPage("calendar"); setMobileNav(false); }} className={page === "calendar" ? "nav-item active" : "nav-item"}><Icon name="calendar"/>Calendar</button>
-          <button onClick={() => { setPage("insights"); setMobileNav(false); }} className={page === "insights" ? "nav-item active" : "nav-item"}><Icon name="chart"/>Insights</button>
-        </nav>
-        <div className="sidebar-bottom"><button onClick={() => { setPage("settings"); setMobileNav(false); }} className={page === "settings" ? "nav-item active" : "nav-item"}><Icon name="settings"/>Settings</button></div>
-      </aside>
-
-      <main className="content">
-        {page === "calendar" ? <CalendarView tasks={tasks} openNewTask={(date) => { setTaskDate(date); setShowTaskForm(true); }} /> : page === "insights" ? <InsightsView tasks={tasks} streak={streak} focusSeconds={focusSeconds} /> : page === "settings" ? <SettingsView darkMode={darkMode} setDarkMode={setDarkMode} /> : <>
-        <header className="topbar"><div><p className="eyebrow">YOUR PERSONAL DASHBOARD</p><h1>{greeting}, Hanif <span>👋</span></h1><p className="subtitle">Here's what you have planned for today.</p></div><div className="topbar-actions"><div className="focus-orbit" aria-hidden="true"><i/><b/><span>Focus<br/>mode</span></div><button className="new-task" onClick={() => { setTaskDate(jakartaDate()); setShowTaskForm(true); }}><Icon name="plus" size={18}/>New task</button></div></header>
-        <section className="stat-grid"><article><div className="stat-icon violet"><Icon name="check"/></div><div><span>Tasks completed</span><strong>{completed}<em> / {todayTasks.length}</em></strong></div><div className="trend">↗ 12%</div></article><article><div className="stat-icon amber"><Icon name="target"/></div><div><span>Focus time</span><strong>{focusDisplay}</strong></div><div className="trend">Live</div></article><article><div className="stat-icon pink"><Icon name="chart"/></div><div><span>Daily progress</span><strong>{dailyProgress}<em>%</em></strong></div><div className="mini-bar"><i style={{ width: `${dailyProgress}%` }}/></div></article></section>
-        <div className="workspace-grid">
-          <section className="tasks-card card"><div className="section-heading"><div><h2>Today's tasks</h2><p>{todayTasks.filter(t => !t.done).length} tasks remaining</p></div></div><div className="filters">{["Today", "Completed"].map(item => <button onClick={() => setFilter(item)} className={filter === item ? "selected" : ""} key={item}>{item}</button>)}</div><div className="task-list">{visibleTasks.length ? visibleTasks.map(task => <div className={`task-row ${task.done ? "complete" : ""}`} key={task.id}><button className="checkbox" onClick={() => toggleTask(task.id)} aria-label={`Toggle ${task.title}`}>{task.done && "✓"}</button><div className="task-copy"><strong>{task.title}</strong><span><b className={`dot ${task.category.toLowerCase()}`}/>{task.category} <i>•</i> {task.due}</span></div><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><div className="task-actions"><button className="more" onClick={() => setTaskMenu(taskMenu === task.id ? null : task.id)} aria-label="Task options"><Icon name="more" size={20}/></button>{taskMenu === task.id && <div className="task-menu"><button onClick={() => toggleTask(task.id)}>{task.done ? "Mark active" : "Mark complete"}</button><button onClick={() => setTasks(tasks.filter(item => item.id !== task.id))}>Delete task</button></div>}</div></div>) : <p className="empty-tasks">No tasks for today. Plan one from the calendar or create a new task.</p>}</div></section>
-          <aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>{activePeriod ? `${activePeriod} is running in the background` : "Stay in the zone"}</p></div><button className="timer-menu"><Icon name="more"/></button></div><div className="timer-tabs">{(Object.keys(durations) as Array<keyof typeof durations>).map(item => <button onClick={() => changePeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className="timer-ring"><svg viewBox="0 0 190 190"><circle className="ring-track" cx="95" cy="95" r="82"/><circle className="ring-progress" cx="95" cy="95" r="82" style={{ strokeDashoffset: 515 - (515 * seconds / durations[period]) }}/></svg><div><strong>{time}</strong><span>{period === "Focus" ? "Focus session" : period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { setTimerValues((current) => ({ ...current, [period]: durations[period] })); if (activePeriod === period) setActivePeriod(null); }}><Icon name="rotate" size={19}/></button><button className="start" onClick={() => setActivePeriod(activePeriod === period ? null : period)}><Icon name={activePeriod === period ? "pause" : "play"} size={18}/>{activePeriod === period ? "Pause" : activePeriod ? "Switch timer" : `Start ${period.toLowerCase()}`}</button></div><p className="session-note">🍅 <b>3</b> focus sessions completed today</p></section><section className="quote-card"><span>“</span><div className="quote-content" key={quoteIndex}><p>{quotes[quoteIndex].text}</p><small>— {quotes[quoteIndex].author}</small></div><div className="quote-controls"><button onClick={() => setQuoteIndex((quoteIndex - 1 + quotes.length) % quotes.length)} aria-label="Kutipan sebelumnya">←</button><div>{quotes.map((_, index) => <button key={index} className={index === quoteIndex ? "quote-dot active" : "quote-dot"} onClick={() => setQuoteIndex(index)} aria-label={`Kutipan ${index + 1}`}/>)}</div><button onClick={() => setQuoteIndex((quoteIndex + 1) % quotes.length)} aria-label="Kutipan selanjutnya">→</button></div></section></aside>
-        </div></>}
-      </main>{showTaskForm && <div className="modal-backdrop" onMouseDown={() => setShowTaskForm(false)}><form className="task-modal" onSubmit={addTask} onMouseDown={event => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowTaskForm(false)}>×</button><p className="eyebrow">PLAN YOUR DAY</p><h2>New task</h2><label>Task title<input autoFocus value={taskTitle} onChange={event => setTaskTitle(event.target.value)} placeholder="What needs to be done?" /></label><label>Due date<input type="date" value={taskDate} disabled={taskDate === jakartaDate()} onChange={event => setTaskDate(event.target.value)} /></label><label>Priority<select value={taskPriority} onChange={event => setTaskPriority(event.target.value as Task["priority"])}><option>Low</option><option>Medium</option><option>High</option></select></label><button className="new-task" type="submit"><Icon name="plus" size={18}/>Add task</button></form></div>}
-    </div>
-  );
+  const openNewTask = (date: string) => { setTaskDate(date); setReminderAt(""); setShowTaskForm(true); };
+  return <div className="app-shell">{reminderToast && <aside className="reminder-toast" role="alert"><div className="reminder-bell"><Icon name="bell" size={22}/></div><div><small>FOCUSFLOW REMINDER</small><strong>{reminderToast.title}</strong><span>Waktunya fokus. Kamu bisa melakukannya ✦</span></div><button onClick={() => setReminderToast(null)} aria-label="Tutup notifikasi">×</button></aside>}<button className="mobile-menu-button" onClick={() => setMobileNav(!mobileNav)} aria-label="Buka navigasi"><Icon name="menu" size={23}/></button>{mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}<aside className={mobileNav ? "sidebar mobile-open" : "sidebar"}><div className="brand"><AnimeMark/><span>FocusFlowApp</span></div><nav className="main-nav">{([ ["overview", "grid", "Overview"], ["calendar", "calendar", "Calendar"], ["insights", "chart", "Insights"] ] as const).map(([target, icon, label]) => <button key={target} onClick={() => { setPage(target); setMobileNav(false); }} className={page === target ? "nav-item active" : "nav-item"}><Icon name={icon}/>{label}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => { setPage("settings"); setMobileNav(false); }} className={page === "settings" ? "nav-item active" : "nav-item"}><Icon name="settings"/>Settings</button></div></aside><main className="content">{page === "calendar" ? <CalendarView tasks={tasks} openNewTask={openNewTask}/> : page === "insights" ? <InsightsView tasks={tasks} focusSeconds={focusSeconds}/> : page === "settings" ? <SettingsView darkMode={darkMode} setDarkMode={setDarkMode}/> : <><header className="topbar"><div><p className="eyebrow">YOUR PERSONAL DASHBOARD</p><h1>FocusFlow&apos;s App <span>✦</span></h1><p className="subtitle">Here&apos;s what you have planned for today.</p></div><div className="topbar-actions"><AnimeMark/><button className="new-task" onClick={() => openNewTask(today)}><Icon name="plus" size={18}/>New task</button></div></header><section className="stat-grid"><article><div className="stat-icon violet"><Icon name="check"/></div><div><span>Tasks completed</span><strong>{completed}<em> / {todayTasks.length}</em></strong></div></article><article><div className="stat-icon amber"><Icon name="target"/></div><div><span>Focus time</span><strong>{focusTimeLabel(focusSeconds)}</strong></div><div className="trend">Live</div></article><article><div className="stat-icon pink"><Icon name="chart"/></div><div><span>Daily progress</span><strong>{progress}<em>%</em></strong></div><div className="mini-bar"><i style={{ width: `${progress}%` }}/></div></article></section><div className="workspace-grid"><section className="tasks-card card"><div className="section-heading"><div><h2>Today&apos;s tasks</h2><p>{todayTasks.filter((task) => !task.done).length} tasks remaining</p></div></div><div className="filters">{["Today", "Completed"].map((item) => <button onClick={() => setFilter(item)} className={filter === item ? "selected" : ""} key={item}>{item}</button>)}</div><div className="task-list">{visibleTasks.length ? visibleTasks.map((task) => <div className={`task-row ${task.done ? "complete" : ""}`} key={task.id}><button className="checkbox" onClick={() => toggleTask(task.id)} aria-label={`Toggle ${task.title}`}>{task.done && "✓"}</button><div className="task-copy"><strong>{task.title}</strong><span><b className="dot personal"/>Personal <i>•</i> {taskDateDescription(task.date)}{task.reminderAt && <> <i>•</i> <Icon name="bell" size={12}/>{task.reminderAt}</>}</span></div><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><div className="task-actions"><button className="more" onClick={() => setTaskMenu(taskMenu === task.id ? null : task.id)} aria-label="Task options"><Icon name="more" size={20}/></button>{taskMenu === task.id && <div className="task-menu"><button onClick={() => toggleTask(task.id)}>{task.done ? "Mark active" : "Mark complete"}</button><button onClick={() => setTasks((current) => current.filter((item) => item.id !== task.id))}>Delete task</button></div>}</div></div>) : <p className="empty-tasks">No tasks for today. Plan one from the calendar or create a new task.</p>}</div></section><aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>{activePeriod ? `${activePeriod} is running` : "Stay in the zone"}</p></div></div><div className="timer-tabs">{(Object.keys(DURATIONS) as Period[]).map((item) => <button onClick={() => setPeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className="timer-ring"><svg viewBox="0 0 190 190"><circle className="ring-track" cx="95" cy="95" r="82"/><circle className="ring-progress" cx="95" cy="95" r="82" style={{ strokeDashoffset: 515 - (515 * seconds / DURATIONS[period]) }}/></svg><div><strong>{time}</strong><span>{period === "Focus" ? "Focus session" : period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { setTimerValues((values) => ({ ...values, [period]: DURATIONS[period] })); if (activePeriod === period) setActivePeriod(null); }}><Icon name="rotate" size={19}/></button><button className="start" onClick={() => setActivePeriod(activePeriod === period ? null : period)}><Icon name={activePeriod === period ? "pause" : "play"} size={18}/>{activePeriod === period ? "Pause" : `Start ${period.toLowerCase()}`}</button></div></section><section className="quote-card"><span>“</span><div className="quote-content" key={quoteIndex}><p>{QUOTES[quoteIndex].text}</p><small>— {QUOTES[quoteIndex].author}</small></div><div className="quote-controls"><button onClick={() => setQuoteIndex((quoteIndex - 1 + QUOTES.length) % QUOTES.length)}>←</button><div>{QUOTES.map((_, index) => <button key={index} className={index === quoteIndex ? "quote-dot active" : "quote-dot"} onClick={() => setQuoteIndex(index)}/>)}</div><button onClick={() => setQuoteIndex((quoteIndex + 1) % QUOTES.length)}>→</button></div></section></aside></div></>}</main>{showTaskForm && <div className="modal-backdrop" onMouseDown={closeTaskForm}><form className="task-modal" onSubmit={addTask} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={closeTaskForm}>×</button><p className="eyebrow">PLAN YOUR DAY</p><h2>New task</h2><label>Task title<input autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} placeholder="What needs to be done?"/></label><label>Due date<input type="date" value={taskDate} min={today} onChange={(event) => setTaskDate(event.target.value)}/></label><label>Reminder time <small>(optional; works while the app is open)</small><input type="time" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)}/></label><label>Priority<select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as Priority)}><option>Low</option><option>Medium</option><option>High</option></select></label><button className="new-task" type="submit"><Icon name="plus" size={18}/>Add task</button></form></div>}</div>;
 }
 
 export default App;
