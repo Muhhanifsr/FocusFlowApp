@@ -5,10 +5,10 @@
 function doPost(event) {
   const payload = JSON.parse(event.parameter.payload || '{}');
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const tasksSheet = sheet_(spreadsheet, 'Daily Tasks', ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Status', 'Created at', 'Completed at', 'Last synced']);
+  const tasksSheet = sheet_(spreadsheet, 'Daily Tasks', ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Status', 'Reminder time', 'Created at', 'Completed at', 'Last synced']);
   const insightSheet = sheet_(spreadsheet, 'Insights', ['Date', 'Total tasks', 'Completed tasks', 'Completion rate', 'Focus seconds', 'Last synced']);
 
-  (payload.tasks || []).forEach(task => upsertTask_(tasksSheet, task));
+  replaceTasks_(tasksSheet, payload.tasks || []);
   if (payload.insight) upsertInsight_(insightSheet, payload.insight);
   buildInsightChart_(spreadsheet, insightSheet);
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
@@ -21,11 +21,15 @@ function sheet_(spreadsheet, name, headers) {
   return sheet;
 }
 
-function upsertTask_(sheet, task) {
-  const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat() : [];
-  const index = rows.indexOf(task.id);
-  const values = [task.id, task.date, task.title, task.category, task.priority, task.done ? 'Completed' : 'Active', task.createdAt || '', task.completedAt || '', new Date().toISOString()];
-  if (index >= 0) sheet.getRange(index + 2, 1, 1, values.length).setValues([values]); else sheet.appendRow(values);
+function replaceTasks_(sheet, tasks) {
+  const headers = ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Status', 'Reminder time', 'Created at', 'Completed at', 'Last synced'];
+  // Rewrite the task snapshot so a deleted task is also deleted in Google Sheets.
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (!tasks.length) return;
+  const syncedAt = new Date().toISOString();
+  const values = tasks.map(task => [task.id, task.date, task.title, task.category, task.priority, task.done ? 'Completed' : 'Active', task.reminderAt || '', task.createdAt || '', task.completedAt || '', syncedAt]);
+  sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
 function upsertInsight_(sheet, insight) {
