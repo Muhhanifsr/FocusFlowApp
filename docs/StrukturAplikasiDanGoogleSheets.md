@@ -8,9 +8,10 @@ Dokumen ini menjelaskan struktur **kode yang ada saat ini**, file mana yang sali
 Pengguna
   │
   ▼
-React UI (app/src/App.tsx) ── menyimpan data lokal ──► browser/Tauri localStorage
-  │
-  └── POST webhook (bila URL .env tersedia) ────────► Google Apps Script
+React UI (app/src/App.tsx) ── cache lokal ──► browser/Tauri localStorage
+  │                                      ▲
+  ├── GET state saat aplikasi dibuka ────┤
+  └── POST setiap perubahan ─────────────► Google Apps Script
                                                         │
                                                         ▼
                                                    Google Spreadsheet
@@ -21,7 +22,7 @@ React UI (app/src/App.tsx) ── menyimpan data lokal ──► browser/Tauri l
 Tauri membungkus React/Vite menjadi aplikasi desktop/mobile.
 ```
 
-`localStorage` adalah sumber data utama aplikasi. Spreadsheet hanya menerima salinan data dari aplikasi (sinkronisasi satu arah), bukan sumber data yang dibaca kembali saat aplikasi dibuka.
+`localStorage` berfungsi sebagai cache/offline fallback. Bila URL webhook tersedia, spreadsheet menyimpan state terakhir dan menjadi sumber pemulihan data saat aplikasi dibuka, termasuk saat berganti browser/perangkat.
 
 ## Struktur folder dan file terkait
 
@@ -75,7 +76,7 @@ Task memakai bentuk data berikut:
 - Kalender menampilkan dan menghitung task berdasarkan tanggal pembuatannya (`createdAt` dalam WIB). Tanggal jatuh tempo tetap tersimpan pada tiap task.
 - Overview dan Insights menghitung progres hanya dari task pada tanggal Jakarta saat ini.
 
-Setiap perubahan task langsung disimpan ke `localStorage` dan disinkronkan ke Google Sheets bila webhook tersedia. Aplikasi juga mencatat pembukaan aplikasi, task dibuat/diselesaikan/dibuka kembali/dihapus, serta aksi timer. Snapshot terjadwal pukul **08.00 WIB** tetap menjadi cadangan bila aplikasi sedang terbuka.
+Setiap perubahan task langsung disimpan ke `localStorage` dan disinkronkan ke Google Sheets bila webhook tersedia. Sebelum mencatat aktivitas pembukaan aplikasi, FocusFlow mengambil snapshot backend agar cache perangkat lama tidak menimpa data terbaru. Aplikasi juga mencatat pembukaan aplikasi, task dibuat/diselesaikan/dibuka kembali/dihapus, serta aksi timer. Snapshot terjadwal pukul **08.00 WIB** tetap menjadi cadangan bila aplikasi sedang terbuka.
 
 ### 3. Timer, insight, dan streak
 
@@ -125,26 +126,29 @@ Pengiriman memakai `mode: "no-cors"`. Ini memudahkan request lintas domain ke Ap
 
 1. Membaca `event.parameter.payload` dan mengubahnya dari JSON.
 2. Memastikan sheet `Daily Tasks`, `Insights`, dan `Activity Log` ada. Jika belum ada, script membuat sheet serta baris header.
-3. Menulis ulang snapshot `Daily Tasks`, sehingga task baru maupun task dengan tanggal masa depan masuk ke spreadsheet dan task yang dihapus dari aplikasi juga ikut hilang dari sheet.
+3. Menulis ulang snapshot `Daily Tasks` untuk task aktif saat ini, lalu memperbarui `Task History` sebagai arsip permanen. Saat sebuah task terhapus dari aplikasi, baris arsipnya dipertahankan dengan status `Deleted`.
 4. Menulis snapshot `Insights` berdasarkan tanggal pembuatan task (`createdAt` dalam WIB), satu baris untuk setiap tanggal, termasuk jumlah login dan aktivitas hari itu.
 5. Menambahkan aktivitas baru ke `Activity Log` berdasarkan Activity ID. Sheet ini bersifat append-only, jadi riwayat yang pernah tersinkron tidak hilang ketika task dihapus dari aplikasi.
-5. Membuat/menyegarkan sheet `Insight Chart` dan grafik kolom dari data `Insights`.
+6. Menyimpan snapshot lengkap (task, aktivitas, insight, fokus per hari, dan tema) di `App State`. Endpoint `GET ?action=state` mengembalikan snapshot ini saat aplikasi dibuka.
+7. Membuat/menyegarkan sheet `Insight Chart` dan grafik kolom dari data `Insights`.
 
 ### Isi setiap sheet
 
 | Sheet | Kolom | Kegunaan |
 | --- | --- | --- |
 | `Daily Tasks` | Task ID, Date, Title, Category, Priority, Status, Reminder time, Created at, Completed at, Last synced | Snapshot task yang tersimpan saat ini. |
+| `Task History` | Task ID, Date, Title, Category, Priority, Final status, Reminder time, Created at, Completed at, Last seen at | Arsip task; termasuk task yang telah dihapus. |
 | `Insights` | Date, Total tasks, Completed tasks, Completion rate, Focus seconds, Login count, Activity count, Last activity at, Last synced | Snapshot produktivitas harian. |
 | `Activity Log` | Activity ID, Occurred at, Type, Description, Task ID, Last synced | Arsip append-only setiap aktivitas yang dicatat aplikasi. |
+| `App State` | Key, Value, Updated at | Snapshot JSON backend untuk memulihkan aplikasi; jangan diedit manual. |
 | `Insight Chart` | Judul dan grafik kolom | Visualisasi completion rate berdasarkan data `Insights`. |
 
 ## Batasan penting implementasi saat ini
 
-- Sinkronisasi **satu arah**: mengubah spreadsheet tidak akan mengubah task di aplikasi.
+- Spreadsheet adalah backend pemulihan data, tetapi bukan editor dua arah: perubahan manual pada tab task/insight tidak diterapkan ke aplikasi. Hanya snapshot `App State` yang dibaca oleh aplikasi.
 - Spreadsheet disinkronkan pukul 08.00 WIB selama aplikasi terbuka. Jika aplikasi tertutup pada jam tersebut, laporan dikirim saat aplikasi berikutnya dibuka setelah pukul 08.00; aplikasi web tidak dapat mengirim data sendiri saat benar-benar tertutup.
 - Pengingat browser hanya dapat dijadwalkan secara andal saat aplikasi terbuka; untuk notifikasi saat aplikasi benar-benar tertutup diperlukan notifikasi native/background service.
-- Bila pengguna mulai memakai perangkat/browser lain, kedua `localStorage` berbeda. Spreadsheet tidak menyatukan atau mengunduh data kembali.
+- Pada perangkat/browser lain, gunakan URL webhook yang sama. Aplikasi akan memulihkan state dari spreadsheet saat dibuka. Hindari membuka dan mengubah aplikasi yang lama saat perangkat baru sedang aktif, karena strategi konflik saat ini adalah perubahan terakhir yang tersinkron.
 - URL spreadsheet di halaman Settings ditulis langsung (hard-coded) di `App.tsx`, sedangkan URL webhook dibaca dari `.env`. Keduanya dapat mengarah ke spreadsheet yang berbeda bila tidak dikonfigurasi konsisten.
 - Karena `no-cors`, kegagalan webhook tidak terlihat di UI.
 
