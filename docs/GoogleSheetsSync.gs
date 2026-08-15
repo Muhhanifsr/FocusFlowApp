@@ -7,11 +7,27 @@ function doPost(event) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const tasksSheet = sheet_(spreadsheet, 'Daily Tasks', ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Status', 'Reminder time', 'Created at', 'Completed at', 'Last synced']);
   const insightSheet = sheet_(spreadsheet, 'Insights', ['Date', 'Total tasks', 'Completed tasks', 'Completion rate', 'Focus seconds', 'Last synced']);
+  const activitySheet = sheet_(spreadsheet, 'Activity Log', ['Activity ID', 'Occurred at', 'Type', 'Description', 'Task ID', 'Last synced']);
 
   replaceTasks_(tasksSheet, payload.tasks || []);
-  if (payload.insight) upsertInsight_(insightSheet, payload.insight);
+  // The app sends a snapshot for every task date. Replacing this sheet keeps
+  // deleted tasks and their former dates from remaining in the chart.
+  replaceInsights_(insightSheet, payload.insights || (payload.insight ? [payload.insight] : []));
+  replaceActivities_(activitySheet, payload.activities || []);
   buildInsightChart_(spreadsheet, insightSheet);
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function replaceActivities_(sheet, activities) {
+  const headers = ['Activity ID', 'Occurred at', 'Type', 'Description', 'Task ID', 'Last synced'];
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (!activities.length) return;
+  const syncedAt = new Date().toISOString();
+  const values = activities
+    .sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)))
+    .map(activity => [activity.id, activity.occurredAt, activity.kind, activity.description, activity.taskId || '', syncedAt]);
+  sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
 function sheet_(spreadsheet, name, headers) {
@@ -32,11 +48,15 @@ function replaceTasks_(sheet, tasks) {
   sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
-function upsertInsight_(sheet, insight) {
-  const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().map(String) : [];
-  const index = rows.indexOf(insight.date);
-  const values = [insight.date, insight.totalTasks, insight.completedTasks, insight.completionRate, insight.focusSeconds, insight.syncedAt];
-  if (index >= 0) sheet.getRange(index + 2, 1, 1, values.length).setValues([values]); else sheet.appendRow(values);
+function replaceInsights_(sheet, insights) {
+  const headers = ['Date', 'Total tasks', 'Completed tasks', 'Completion rate', 'Focus seconds', 'Last synced'];
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (!insights.length) return;
+  const values = insights
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .map(insight => [insight.date, insight.totalTasks, insight.completedTasks, insight.completionRate, insight.focusSeconds, insight.syncedAt]);
+  sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
 function buildInsightChart_(spreadsheet, insightSheet) {
