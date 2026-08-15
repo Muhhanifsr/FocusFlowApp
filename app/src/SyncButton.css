@@ -1,0 +1,27 @@
+.sync-button {
+  height: 42px;
+  margin-top: 3px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #ded9ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #664bd0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sync-button:hover:not(:disabled) { background: #f4f1ff; }
+.sync-button:disabled { cursor: wait; opacity: .65; }
+.sync-button.syncing svg { animation: sync-spin .8s linear infinite; }
+.sync-button.success { color: #3d9876; border-color: #c7eadc; }
+.sync-button.error { color: #c85c70; border-color: #f0cad1; }
+
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 620px) {
+  .sync-button { width: 42px; padding: 0; font-size: 0; }
+}
