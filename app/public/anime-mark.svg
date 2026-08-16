@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FocusFlow anime logo">
+  <defs>
+    <linearGradient id="skin" x1="12" x2="52" y1="16" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffdcc6"/>
+      <stop offset=".52" stop-color="#ffd1bf"/>
+      <stop offset="1" stop-color="#ffc7b6"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="15" x2="51" y1="5" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#46317c"/>
+      <stop offset="1" stop-color="#916fe5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#7254d5" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <circle cx="32" cy="34" r="25" fill="url(#skin)" filter="url(#shadow)"/>
+  <path d="M9 29C11 10 24 4 39 6c12 2 18 9 18 21-7 3-16 3-25 0-7-2-15-1-23 2Z" fill="url(#hair)"/>
+  <path d="M43 25h15L43 42Z" fill="#7657cf"/>
+  <ellipse cx="24" cy="36" rx="4.3" ry="6.1" fill="#3f3263"/>
+  <ellipse cx="40" cy="36" rx="4.3" ry="6.1" fill="#3f3263"/>
+  <ellipse cx="25.5" cy="33.5" rx="1.4" ry="1.8" fill="#fff" opacity=".85"/>
+  <ellipse cx="41.5" cy="33.5" rx="1.4" ry="1.8" fill="#fff" opacity=".85"/>
+  <path d="M28 48c3 2.2 6 2.2 9 0" fill="none" stroke="#c47774" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M51 3l2.6 5.8L60 11.2l-5.8 2.6L51.8 20l-2.6-5.8L43 11.8l5.8-2.6L51 3Z" fill="#ffd36b" stroke="#966226" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>
