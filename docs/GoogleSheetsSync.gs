@@ -102,12 +102,15 @@ function loadState_(spreadsheet) {
 
 function replaceInsights_(sheet, insights) {
   const headers = ['Date', 'Total tasks', 'Completed tasks', 'Completion rate', 'Focus seconds', 'Login count', 'Activity count', 'Last activity at', 'Last synced'];
+  // Keep the spreadsheet as the long-term store. The browser only sends its
+  // recent cache, so older rows must not disappear from the reporting history.
+  const existing = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues() : [];
+  const byDate = new Map(existing.map(row => [String(row[0]), row]));
+  insights.forEach(insight => byDate.set(String(insight.date), [insight.date, insight.totalTasks, insight.completedTasks, insight.completionRate, insight.focusSeconds, insight.loginCount || 0, insight.activityCount || 0, insight.lastActivityAt || '', insight.syncedAt]));
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  if (!insights.length) return;
-  const values = insights
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .map(insight => [insight.date, insight.totalTasks, insight.completedTasks, insight.completionRate, insight.focusSeconds, insight.loginCount || 0, insight.activityCount || 0, insight.lastActivityAt || '', insight.syncedAt]);
+  const values = [...byDate.values()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  if (!values.length) return;
   sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
