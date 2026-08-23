@@ -8,16 +8,13 @@ function doPost(event) {
   const tasksSheet = sheet_(spreadsheet, 'Daily Tasks', ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Status', 'Reminder time', 'Created at', 'Completed at', 'Last synced']);
   const taskHistorySheet = sheet_(spreadsheet, 'Task History', ['Task ID', 'Date', 'Title', 'Category', 'Priority', 'Final status', 'Reminder time', 'Created at', 'Completed at', 'Last seen at']);
   const insightSheet = sheet_(spreadsheet, 'Insights', ['Date', 'Total tasks', 'Completed tasks', 'Completion rate', 'Focus seconds', 'Login count', 'Activity count', 'Last activity at', 'Last synced']);
-  const activitySheet = sheet_(spreadsheet, 'Activity Log', ['Activity ID', 'Occurred at', 'Type', 'Description', 'Task ID', 'Last synced']);
 
   replaceTasks_(tasksSheet, payload.tasks || []);
   archiveTasks_(taskHistorySheet, payload.tasks || []);
-  // The app sends a snapshot for every task date. Replacing this sheet keeps
-  // deleted tasks and their former dates from remaining in the chart.
+  // The app sends a snapshot for every task date.
   replaceInsights_(insightSheet, payload.insights || (payload.insight ? [payload.insight] : []));
-  mergeActivities_(activitySheet, payload.activities || []);
   saveState_(spreadsheet, payload);
-  buildInsightChart_(spreadsheet, insightSheet);
+  removeLegacySheets_(spreadsheet);
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -26,23 +23,6 @@ function doGet(event) {
   if (event.parameter.action !== 'state') return ContentService.createTextOutput(JSON.stringify({ ok: true }));
   const state = loadState_(SpreadsheetApp.getActiveSpreadsheet());
   return ContentService.createTextOutput(JSON.stringify({ ok: true, state: state })).setMimeType(ContentService.MimeType.JSON);
-}
-
-function mergeActivities_(sheet, activities) {
-  const headers = ['Activity ID', 'Occurred at', 'Type', 'Description', 'Task ID', 'Last synced'];
-  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  if (!activities.length) return;
-  // This is an append-only audit trail.  The app sends its local history again
-  // on each sync, so IDs are used to prevent duplicate rows.
-  const existingIds = sheet.getLastRow() > 1
-    ? new Set(sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat().map(String))
-    : new Set();
-  const syncedAt = new Date().toISOString();
-  const values = activities
-    .sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)))
-    .filter(activity => !existingIds.has(String(activity.id)))
-    .map(activity => [activity.id, activity.occurredAt, activity.kind, activity.description, activity.taskId || '', syncedAt]);
-  if (values.length) sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
 }
 
 function sheet_(spreadsheet, name, headers) {
@@ -84,19 +64,31 @@ function archiveTasks_(sheet, tasks) {
 
 function saveState_(spreadsheet, payload) {
   const sheet = sheet_(spreadsheet, 'App State', ['Key', 'Value', 'Updated at']);
+  // Google Sheets limits a single cell to 50,000 characters. Store a state in
+  // fixed-size chunks so a long task/insight history remains restorable.
   const state = {
-    tasks: payload.tasks || [], insights: payload.insights || [], activities: payload.activities || [],
+    tasks: payload.tasks || [], insights: payload.insights || [],
     focusByDate: payload.focusByDate || {}, settings: payload.settings || {}
   };
+  const serialized = JSON.stringify(state);
+  const chunkSize = 45_000;
+  const chunks = serialized.match(new RegExp('.{1,' + chunkSize + '}', 'g')) || ['{}'];
+  const updatedAt = new Date().toISOString();
   sheet.clearContents();
   sheet.getRange(1, 1, 1, 3).setValues([['Key', 'Value', 'Updated at']]);
-  sheet.getRange(2, 1, 1, 3).setValues([['state', JSON.stringify(state), new Date().toISOString()]);
+  sheet.getRange(2, 1, chunks.length, 3).setValues(chunks.map((chunk, index) => ['state:' + index, chunk, updatedAt]));
 }
 
 function loadState_(spreadsheet) {
   const sheet = spreadsheet.getSheetByName('App State');
   if (!sheet || sheet.getLastRow() < 2) return null;
-  const raw = sheet.getRange(2, 2).getValue();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  // Support both the former one-row state and the chunked format.
+  const raw = rows
+    .filter(row => String(row[0]) === 'state' || String(row[0]).indexOf('state:') === 0)
+    .sort((a, b) => Number(String(a[0]).split(':')[1] || 0) - Number(String(b[0]).split(':')[1] || 0))
+    .map(row => String(row[1]))
+    .join('');
   try { return raw ? JSON.parse(raw) : null; } catch (error) { return null; }
 }
 
@@ -114,12 +106,10 @@ function replaceInsights_(sheet, insights) {
   sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
 
-function buildInsightChart_(spreadsheet, insightSheet) {
-  const dashboard = spreadsheet.getSheetByName('Insight Chart') || spreadsheet.insertSheet('Insight Chart');
-  dashboard.clear();
-  dashboard.getRange('A1').setValue('FocusFlow completion by date');
-  const rows = Math.max(insightSheet.getLastRow() - 1, 1);
-  const chart = dashboard.newChart().asColumnChart().addRange(insightSheet.getRange(1, 1, rows + 1, 4)).setPosition(3, 1, 0, 0).setOption('title', 'Daily completion rate').setOption('legend', { position: 'none' }).build();
-  dashboard.getCharts().forEach(existing => dashboard.removeChart(existing));
-  dashboard.insertChart(chart);
+function removeLegacySheets_(spreadsheet) {
+  // Requested cleanup: these tabs are no longer written or needed by the app.
+  ['Insight Chart', 'Activity Log'].forEach(name => {
+    const sheet = spreadsheet.getSheetByName(name);
+    if (sheet && spreadsheet.getSheets().length > 1) spreadsheet.deleteSheet(sheet);
+  });
 }

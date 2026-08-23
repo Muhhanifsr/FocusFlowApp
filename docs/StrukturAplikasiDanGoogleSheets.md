@@ -11,13 +11,14 @@ Pengguna
 React UI (app/src/App.tsx) ── cache lokal ──► browser/Tauri localStorage
   │                                      ▲
   ├── GET state saat aplikasi dibuka ────┤
-  └── POST setiap perubahan ─────────────► Google Apps Script
+  └── POST dibundel (5 dtk) ─────────────► Google Apps Script
                                                         │
                                                         ▼
                                                    Google Spreadsheet
                                                    ├─ Daily Tasks
                                                    ├─ Insights
-                                                   └─ Insight Chart
+                                                   ├─ Task History
+                                                   └─ App State
 
 Tauri membungkus React/Vite menjadi aplikasi desktop/mobile.
 ```
@@ -76,7 +77,7 @@ Task memakai bentuk data berikut:
 - Kalender menampilkan dan menghitung task berdasarkan tanggal pembuatannya (`createdAt` dalam WIB). Tanggal jatuh tempo tetap tersimpan pada tiap task.
 - Overview dan Insights menghitung progres hanya dari task pada tanggal Jakarta saat ini.
 
-Setiap perubahan task langsung disimpan ke `localStorage` dan disinkronkan ke Google Sheets bila webhook tersedia. Sebelum mencatat aktivitas pembukaan aplikasi, FocusFlow mengambil snapshot backend agar cache perangkat lama tidak menimpa data terbaru. Aplikasi juga mencatat pembukaan aplikasi, task dibuat/diselesaikan/dibuka kembali/dihapus, serta aksi timer. Snapshot terjadwal pukul **08.00 WIB** tetap menjadi cadangan bila aplikasi sedang terbuka.
+Setiap perubahan task langsung disimpan ke `localStorage` dan disinkronkan ke Google Sheets bila webhook tersedia. Request normal dibundel selama 5 detik dan hanya satu request boleh berjalan pada satu waktu, agar klik cepat tidak membebani browser maupun Apps Script. Sebelum mencatat aktivitas pembukaan aplikasi, FocusFlow mengambil snapshot backend agar cache perangkat lama tidak menimpa data terbaru. Aktivitas tetap dicatat lokal untuk insight perangkat tersebut; snapshot terjadwal pukul **08.00 WIB** tetap menjadi cadangan bila aplikasi sedang terbuka.
 
 ### 3. Timer, insight, dan streak
 
@@ -108,13 +109,13 @@ Fungsi `syncGoogleSheets()` di `App.tsx` mengirim `POST` dengan format form URL-
 
 ```json
 {
+  "version": 2,
   "tasks": ["seluruh daftar task saat ini"],
   "insights": [
     { "date": "2026-08-12", "totalTasks": 3, "completedTasks": 1, "completionRate": 33, "focusSeconds": 0, "loginCount": 1, "activityCount": 4, "syncedAt": "2026-08-12T...Z" }
   ],
-  "activities": [
-    { "id": "...", "kind": "login", "occurredAt": "2026-08-12T...Z", "description": "Aplikasi dibuka" }
-  ]
+  "focusByDate": { "2026-08-12": 1500 },
+  "settings": { "darkMode": false }
 }
 ```
 
@@ -125,12 +126,11 @@ Pengiriman memakai `mode: "no-cors"`. Ini memudahkan request lintas domain ke Ap
 `doPost(event)` di `GoogleSheetsSync.gs` melakukan langkah berikut:
 
 1. Membaca `event.parameter.payload` dan mengubahnya dari JSON.
-2. Memastikan sheet `Daily Tasks`, `Insights`, dan `Activity Log` ada. Jika belum ada, script membuat sheet serta baris header.
+2. Memastikan sheet `Daily Tasks` dan `Insights` ada. Jika belum ada, script membuat sheet serta baris header.
 3. Menulis ulang snapshot `Daily Tasks` untuk task aktif saat ini, lalu memperbarui `Task History` sebagai arsip permanen. Saat sebuah task terhapus dari aplikasi, baris arsipnya dipertahankan dengan status `Deleted`.
 4. Menulis snapshot `Insights` berdasarkan tanggal pembuatan task (`createdAt` dalam WIB), satu baris untuk setiap tanggal, termasuk jumlah login dan aktivitas hari itu.
-5. Menambahkan aktivitas baru ke `Activity Log` berdasarkan Activity ID. Sheet ini bersifat append-only, jadi riwayat yang pernah tersinkron tidak hilang ketika task dihapus dari aplikasi.
-6. Menyimpan snapshot lengkap (task, aktivitas, insight, fokus per hari, dan tema) di `App State`. Endpoint `GET ?action=state` mengembalikan snapshot ini saat aplikasi dibuka.
-7. Membuat/menyegarkan sheet `Insight Chart` dan grafik kolom dari data `Insights`.
+5. Menyimpan snapshot lengkap (task, insight, fokus per hari, dan tema) di `App State`. Snapshot besar dipotong otomatis ke beberapa baris agar tidak melewati batas 50.000 karakter per sel. Endpoint `GET ?action=state` mengembalikan snapshot ini saat aplikasi dibuka.
+6. Menghapus tab legacy `Activity Log` dan `Insight Chart` bila masih ada.
 
 ### Isi setiap sheet
 
@@ -139,9 +139,7 @@ Pengiriman memakai `mode: "no-cors"`. Ini memudahkan request lintas domain ke Ap
 | `Daily Tasks` | Task ID, Date, Title, Category, Priority, Status, Reminder time, Created at, Completed at, Last synced | Snapshot task yang tersimpan saat ini. |
 | `Task History` | Task ID, Date, Title, Category, Priority, Final status, Reminder time, Created at, Completed at, Last seen at | Arsip task; termasuk task yang telah dihapus. |
 | `Insights` | Date, Total tasks, Completed tasks, Completion rate, Focus seconds, Login count, Activity count, Last activity at, Last synced | Snapshot produktivitas harian. |
-| `Activity Log` | Activity ID, Occurred at, Type, Description, Task ID, Last synced | Arsip append-only setiap aktivitas yang dicatat aplikasi. |
-| `App State` | Key, Value, Updated at | Snapshot JSON backend untuk memulihkan aplikasi; jangan diedit manual. |
-| `Insight Chart` | Judul dan grafik kolom | Visualisasi completion rate berdasarkan data `Insights`. |
+| `App State` | Key, Value, Updated at | Snapshot JSON backend untuk memulihkan aplikasi; nilai JSON dapat terdiri dari beberapa baris `state:n`; jangan diedit manual. |
 
 ## Batasan penting implementasi saat ini
 
