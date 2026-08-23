@@ -31,11 +31,14 @@ const QUOTES = [
   { text: "It always seems impossible until it's done.", author: "Nelson Mandela" },
 ];
 
-const jakartaDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+const jakartaDateFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" });
+const displayDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+const shortDisplayDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const jakartaDate = () => jakartaDateFormatter.format(new Date());
 const isDateKey = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
-const dateLabel = (date: string) => isDateKey(date) ? new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Unknown date";
-const shortDateLabel = (date: string) => isDateKey(date) ? new Date(`${date}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Unknown";
-const shiftDate = (date: string, days: number) => { const value = new Date(`${date}T00:00:00`); value.setDate(value.getDate() + days); return value.toLocaleDateString("en-CA"); };
+const dateLabel = (date: string) => isDateKey(date) ? displayDateFormatter.format(new Date(`${date}T00:00:00`)) : "Unknown date";
+const shortDateLabel = (date: string) => isDateKey(date) ? shortDisplayDateFormatter.format(new Date(`${date}T00:00:00`)) : "Unknown";
+const shiftDate = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const taskDateDescription = (date: string, today = jakartaDate()) => date === today ? "Today" : date === shiftDate(today, 1) ? "Tomorrow" : dateLabel(date);
 const focusTimeLabel = (seconds: number) => seconds >= 3600 ? `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m` : `${Math.floor(seconds / 60)}m`;
 
@@ -79,7 +82,7 @@ async function loadGoogleSheets(): Promise<RemoteState | null> {
 
 const jakartaDateFrom = (timestamp: string) => {
   const parsed = new Date(timestamp);
-  return Number.isNaN(parsed.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(parsed);
+  return Number.isNaN(parsed.getTime()) ? "" : jakartaDateFormatter.format(parsed);
 };
 
 function createdDate(task: Task) {
@@ -91,10 +94,8 @@ function readStored<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || "") as T; } catch { return fallback; }
 }
 
-function makeInsight(date: string, tasks: Task[], activities: Activity[], focusByDate: Record<string, number>): DailyInsight {
-  const dailyTasks = tasks.filter((task) => createdDate(task) === date);
-  const completedTasks = dailyTasks.filter((task) => task.done).length;
-  const dailyActivities = activities.filter((activity) => jakartaDateFrom(activity.occurredAt) === date);
+function makeInsight(date: string, dailyTasks: Task[], dailyActivities: Activity[], focusByDate: Record<string, number>): DailyInsight {
+  const completedTasks = dailyTasks.reduce((total, task) => total + Number(task.done), 0);
   const logins = dailyActivities.filter((activity) => activity.kind === "login");
   return { date, totalTasks: dailyTasks.length, completedTasks, completionRate: dailyTasks.length ? Math.round((completedTasks / dailyTasks.length) * 100) : 0, focusSeconds: focusByDate[date] || 0, loginCount: logins.length, activityCount: dailyActivities.length, lastActivityAt: dailyActivities[dailyActivities.length - 1]?.occurredAt, syncedAt: new Date().toISOString() };
 }
@@ -102,10 +103,14 @@ function makeInsight(date: string, tasks: Task[], activities: Activity[], focusB
 function hydrateInsights(tasks: Task[], activities: Activity[], saved: DailyInsight[], focusByDate: Record<string, number>) {
   const today = jakartaDate();
   const savedByDate = new Map(saved.filter((item) => isDateKey(item.date)).map((item) => [item.date, item]));
-  const dates = new Set([...savedByDate.keys(), ...tasks.map(createdDate), ...activities.map((item) => jakartaDateFrom(item.occurredAt)).filter(isDateKey), ...Object.keys(focusByDate).filter(isDateKey), today]);
+  const tasksByDate = new Map<string, Task[]>();
+  const activitiesByDate = new Map<string, Activity[]>();
+  tasks.forEach((task) => { const date = createdDate(task); const bucket = tasksByDate.get(date); if (bucket) bucket.push(task); else tasksByDate.set(date, [task]); });
+  activities.forEach((activity) => { const date = jakartaDateFrom(activity.occurredAt); if (!isDateKey(date)) return; const bucket = activitiesByDate.get(date); if (bucket) bucket.push(activity); else activitiesByDate.set(date, [activity]); });
+  const dates = new Set([...savedByDate.keys(), ...tasksByDate.keys(), ...activitiesByDate.keys(), ...Object.keys(focusByDate).filter(isDateKey), today]);
   return [...dates].sort().slice(-MAX_LOCAL_INSIGHTS).map((date) => {
     const old = savedByDate.get(date);
-    const fresh = makeInsight(date, tasks, activities, focusByDate);
+    const fresh = makeInsight(date, tasksByDate.get(date) || [], activitiesByDate.get(date) || [], focusByDate);
     // Historical values are a daily snapshot. Only the current day is recalculated,
     // so a later task edit cannot silently rewrite yesterday's chart.
     if (old && date !== today) return { ...old, loginCount: fresh.loginCount, activityCount: fresh.activityCount, lastActivityAt: fresh.lastActivityAt || old.lastActivityAt, focusSeconds: Math.max(old.focusSeconds || 0, fresh.focusSeconds), syncedAt: old.syncedAt };
@@ -156,7 +161,7 @@ function CalendarView({ tasks, openNewTask }: { tasks: Task[]; openNewTask: (dat
   const days = Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, index) => index + 1);
   const tasksByCreatedDate = useMemo(() => {
     const result = new Map<string, Task[]>();
-    tasks.forEach((task) => { const date = createdDate(task); result.set(date, [...(result.get(date) || []), task]); });
+    tasks.forEach((task) => { const date = createdDate(task); const bucket = result.get(date); if (bucket) bucket.push(task); else result.set(date, [task]); });
     return result;
   }, [tasks]);
   const selectedTasks = tasksByCreatedDate.get(selectedDate) || [];
@@ -185,9 +190,10 @@ function InsightsView({ tasks, focusSeconds, insights }: { tasks: Task[]; focusS
 function SettingsView({ darkMode, setDarkMode, addActivity }: { darkMode: boolean; setDarkMode: (value: boolean) => void; addActivity: (kind: ActivityKind, description: string) => void }) { return <section className="page-panel settings-page"><div className="page-heading"><div><p className="eyebrow">PERSONALIZE FOCUSFLOW</p><h1>Settings</h1><p className="subtitle">Set up your workspace exactly the way you need it.</p></div></div><div className="settings-card card"><div className="setting-row"><div><strong>Appearance</strong><span>Choose a theme that feels comfortable.</span></div><button className={darkMode ? "theme-toggle on" : "theme-toggle"} onClick={() => { const next = !darkMode; setDarkMode(next); addActivity("theme_changed", `Tema diubah ke ${next ? "gelap" : "terang"}`); }}><span className="theme-track"><i/></span><b>{darkMode ? "Dark mode" : "Light mode"}</b></button></div><div className="setting-row"><div><strong>Google Sheets</strong><span>Open task and insight records.</span></div><a className="sheet-link" href={SHEET_LINK} target="_blank" rel="noreferrer">Open spreadsheet ↗</a></div></div></section>; }
 
 function App() {
-  const initialTimer = readTimerState();
+  // Reading localStorage is synchronous; keep it out of timer-driven renders.
+  const [initialTimer] = useState(readTimerState);
   const [tasks, setTasks] = useState<Task[]>(() => readStored<Task[]>(TASK_STORAGE_KEY, [])); const [activities, setActivities] = useState<Activity[]>(() => readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []).slice(-MAX_LOCAL_ACTIVITIES)); const [focusByDate, setFocusByDate] = useState<Record<string, number>>(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})); const [dailyInsights, setDailyInsights] = useState<DailyInsight[]>(() => hydrateInsights(readStored<Task[]>(TASK_STORAGE_KEY, []), readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []), readStored<DailyInsight[]>(INSIGHT_STORAGE_KEY, []), readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {}))); const [filter, setFilter] = useState("Today"); const [taskTitle, setTaskTitle] = useState(""); const [taskPriority, setTaskPriority] = useState<Priority>("Low"); const [taskDate, setTaskDate] = useState(jakartaDate()); const [reminderAt, setReminderAt] = useState(""); const [period, setPeriod] = useState<Period>("Focus"); const [activePeriod, setActivePeriod] = useState<Period | null>(initialTimer.activePeriod); const [timerEndAt, setTimerEndAt] = useState<number | null>(initialTimer.endAt); const [timerValues, setTimerValues] = useState<Record<Period, number>>(initialTimer.values); const [focusStartedAt, setFocusStartedAt] = useState<number | null>(initialTimer.focusStartedAt); const [quoteIndex, setQuoteIndex] = useState(0); const [page, setPage] = useState<"overview" | "calendar" | "insights" | "settings">("overview"); const [darkMode, setDarkMode] = useState(() => readStored("focusflow-settings", { darkMode: false }).darkMode); const [remoteReady, setRemoteReady] = useState(!SHEETS_URL); const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle"); const [showTaskForm, setShowTaskForm] = useState(false); const [taskMenu, setTaskMenu] = useState<number | null>(null); const [mobileNav, setMobileNav] = useState(false); const [focusSeconds, setFocusSeconds] = useState(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})[jakartaDate()] || 0); const [notificationReady, setNotificationReady] = useState(() => "Notification" in window && Notification.permission === "granted"); const [appNotification, setAppNotification] = useState<AppNotification | null>(null); const focusSecondsRef = useRef(focusSeconds); const tasksRef = useRef(tasks); const activitiesRef = useRef(activities); const insightsRef = useRef(dailyInsights); const focusByDateRef = useRef(focusByDate); const darkModeRef = useRef(darkMode); const syncInFlightRef = useRef(false); const syncQueuedRef = useRef(false);
-  const today = jakartaDate(); const todayTasks = useMemo(() => tasks.filter((task) => task.date === today), [tasks, today]); const visibleTasks = filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks; const completed = todayTasks.filter((task) => task.done).length; const progress = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const seconds = timerValues[period]; const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const timerRemainingPercent = Math.max(0, Math.min(100, (seconds / DURATIONS[period]) * 100));
+  const today = jakartaDate(); const todayTasks = useMemo(() => tasks.filter((task) => task.date === today), [tasks, today]); const completed = useMemo(() => todayTasks.reduce((total, task) => total + Number(task.done), 0), [todayTasks]); const visibleTasks = filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks; const progress = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const seconds = timerValues[period]; const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const timerRemainingPercent = Math.max(0, Math.min(100, (seconds / DURATIONS[period]) * 100));
   const closeTaskForm = () => { setShowTaskForm(false); setReminderAt(""); setTaskPriority("Low"); };
   const sendNotification = (notification: AppNotification, tag: string) => { playNotificationSound(); setAppNotification(notification); if (notificationReady) new Notification(`FocusFlow · ${notification.title}`, { body: notification.message, icon: "/anime-mark.svg", tag, requireInteraction: true }); };
   const commitFocusSession = (startedAt: number | null) => { if (!startedAt) return; const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); if (elapsed) setFocusSeconds((value) => value + elapsed); };

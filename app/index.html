@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/anime-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        if (JSON.parse(localStorage.getItem("focusflow-settings") || "{}").darkMode) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (_) {}
+    </script>
     <title>FocusFlow — Personal Productivity</title>
   </head>
 
