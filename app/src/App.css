@@ -7,10 +7,10 @@ html.dark,html.dark body{background:#191725}html.dark .app-shell{color:#f3f1fb;b
 
 .reminder-toast{position:fixed;z-index:50;top:24px;right:24px;width:min(390px,calc(100vw - 32px));padding:14px;display:flex;align-items:center;gap:12px;border:1px solid #dcd4ff;border-radius:16px;background:linear-gradient(135deg,#fff,#f2efff);box-shadow:0 16px 45px #39256e38;animation:reminder-in .35s cubic-bezier(.2,.8,.2,1) both}.reminder-bell{width:44px;height:44px;flex:0 0 auto;display:grid;place-items:center;border-radius:13px;background:linear-gradient(135deg,#7759dc,#a58cff);color:#fff;box-shadow:0 7px 15px #7052cc42}.reminder-toast div:nth-child(2){min-width:0;display:grid;gap:3px}.reminder-toast small{color:#846dd2;font-size:9px;font-weight:800;letter-spacing:1px}.reminder-toast strong{overflow:hidden;color:#31265a;font:700 14px 'Plus Jakarta Sans';text-overflow:ellipsis;white-space:nowrap}.reminder-toast span{color:#777186;font-size:11px}.reminder-toast>button{align-self:flex-start;margin-left:auto;background:transparent;color:#867f9b;font-size:21px;line-height:1}@keyframes reminder-in{from{opacity:0;transform:translateY(-16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}html.dark .reminder-toast{border-color:#4f4677;background:linear-gradient(135deg,#302b47,#242033)}html.dark .reminder-toast strong{color:#faf7ff}html.dark .reminder-toast span{color:#c0b9d0}@media(max-width:620px){.reminder-toast{top:12px;right:16px}.reminder-toast span{font-size:10px}}
 
-/* Keep a painted app surface during navigation and avoid external font work. */
+/* Keep a painted app surface during navigation while the display fonts load. */
 html,body,#root{width:100%;min-height:100%;background:#f7f5fb}
-body,.stat-grid em{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-.topbar h1,.page-heading h1,.brand,.section-heading h2,.timer-heading h2,.calendar-title h2,.agenda-card h2,.insight-main h2,.completion-card h2,.stat-grid strong,.timer-ring strong,.task-modal h2,.reminder-toast strong{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body,.stat-grid em{font-family:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.topbar h1,.page-heading h1,.brand,.section-heading h2,.timer-heading h2,.calendar-title h2,.agenda-card h2,.insight-main h2,.completion-card h2,.stat-grid strong,.timer-ring strong,.task-modal h2,.reminder-toast strong,.undo-toast strong{font-family:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
 .app-shell{width:100%;min-height:100dvh}
 .content{min-width:0;min-height:100dvh;background:transparent}
 .page-panel{min-height:1px;backface-visibility:hidden}
