@@ -20,3 +20,24 @@ html.dark .content{background:transparent}
 @media (prefers-reduced-motion:reduce){
   *,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}
 }
+
+/* Dashboard polish: task feedback, clearer due dates, and a recoverable delete. */
+.task-row{transition:background .18s ease,transform .18s ease}
+.task-row:hover{background:#faf9fe;transform:translateX(2px)}
+.checkbox{transition:background .18s,border-color .18s,transform .18s}
+.checkbox:hover{border-color:#866be2;transform:scale(1.08)}
+.task-copy span{gap:5px}
+.due-badge{padding:2px 6px;border-radius:5px;background:#f0edfd;color:#7154d8;font-size:9px;font-weight:700}
+.due-badge.today{background:#edf8f2;color:#519778}
+.due-badge.overdue{background:#fff0f2;color:#d16475}
+.more:hover{color:#674bd1}
+.task-menu button:hover{background:#f5f3fa}
+.empty-task-state{display:grid;justify-items:center;gap:7px;padding:44px 20px 34px;text-align:center}
+.empty-task-state>span{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:#f0edff;color:#7657d8;font-size:19px}
+.empty-task-state strong{margin-top:4px;font-size:13px}
+.empty-task-state p{max-width:235px;margin:0;color:#9995a3;font-size:11px;line-height:1.55}
+.empty-task-state button{display:flex;align-items:center;gap:6px;margin-top:7px;padding:8px 11px;border-radius:7px;background:#f0edfd;color:#684bd8;font-size:11px;font-weight:700}
+.undo-toast{position:fixed;z-index:51;right:24px;bottom:24px;display:flex;align-items:center;gap:13px;min-width:290px;max-width:calc(100vw - 32px);padding:12px 13px 12px 16px;border:1px solid #ded7f8;border-radius:13px;background:#30264e;color:#fff;box-shadow:0 16px 38px #2116383d;animation:reminder-in .3s ease both}
+.undo-toast>div{min-width:0;display:grid;gap:3px}.undo-toast strong{font-size:12px}.undo-toast span{overflow:hidden;color:#d6cfee;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.undo-toast button{padding:7px 9px;border-radius:7px;background:#9e8aea;color:#fff;font-size:11px;font-weight:800}.undo-toast .dismiss-undo{padding:2px 3px;background:transparent;color:#d6cfee;font-size:20px;font-weight:400}
+html.dark .task-row:hover{background:#2d293d}.dark .due-badge{background:#373050;color:#c9bcff}.dark .due-badge.today{background:#263d37;color:#93dfbd}.dark .due-badge.overdue{background:#482d38;color:#ffb3bf}.dark .empty-task-state>span,.dark .empty-task-state button{background:#373050;color:#c9bcff}
+@media(max-width:620px){.task-row:hover{transform:none}.due-badge{font-size:8px}.undo-toast{right:16px;bottom:16px;min-width:0;width:calc(100vw - 32px)}}
