@@ -41,3 +41,99 @@ html.dark .content{background:transparent}
 .undo-toast>div{min-width:0;display:grid;gap:3px}.undo-toast strong{font-size:12px}.undo-toast span{overflow:hidden;color:#d6cfee;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.undo-toast button{padding:7px 9px;border-radius:7px;background:#9e8aea;color:#fff;font-size:11px;font-weight:800}.undo-toast .dismiss-undo{padding:2px 3px;background:transparent;color:#d6cfee;font-size:20px;font-weight:400}
 html.dark .task-row:hover{background:#2d293d}.dark .due-badge{background:#373050;color:#c9bcff}.dark .due-badge.today{background:#263d37;color:#93dfbd}.dark .due-badge.overdue{background:#482d38;color:#ffb3bf}.dark .empty-task-state>span,.dark .empty-task-state button{background:#373050;color:#c9bcff}
 @media(max-width:620px){.task-row:hover{transform:none}.due-badge{font-size:8px}.undo-toast{right:16px;bottom:16px;min-width:0;width:calc(100vw - 32px)}}
+
+/* Focus timer: layered vector treatment keeps the dial crisp on every display. */
+.timer-card{
+  position:relative;
+  overflow:hidden;
+  border-color:#e9e4f4;
+  background:linear-gradient(145deg,#fff 0%,#fcfbff 58%,#f6f3ff 100%);
+  box-shadow:0 12px 32px rgba(71,49,132,.08),0 2px 7px rgba(46,34,79,.05);
+}
+.timer-card:before{
+  content:"";
+  position:absolute;
+  top:-110px;
+  right:-100px;
+  width:250px;
+  height:250px;
+  pointer-events:none;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(169,137,255,.16),rgba(169,137,255,0) 68%);
+}
+.timer-heading,.timer-tabs,.timer-wrap,.timer-controls{position:relative;z-index:1}
+.timer-heading h2{letter-spacing:-.55px}
+.timer-heading p{font-weight:500}
+.timer-tabs{
+  padding:4px;
+  border:1px solid #ece8f5;
+  border-radius:10px;
+  background:rgba(244,242,249,.88);
+}
+.timer-tabs button{height:30px;transition:color .2s ease,background .2s ease,box-shadow .2s ease,transform .2s ease}
+.timer-tabs button:hover{color:#5d42c8}
+.timer-tabs .active{box-shadow:0 4px 12px rgba(70,47,139,.12);font-weight:800}
+.timer-wrap{padding:8px 0 18px}
+.timer-ring{
+  width:204px;
+  height:204px;
+  isolation:isolate;
+  border-radius:50%;
+  background:conic-gradient(from -90deg,#e8e3f3 0deg 8deg,transparent 8deg 14deg,#e8e3f3 14deg 16deg,transparent 16deg 22deg);
+  box-shadow:0 18px 32px rgba(90,66,164,.12),inset 0 0 0 1px rgba(116,85,220,.06);
+}
+.timer-ring:before{
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset:9px;
+  border-radius:50%;
+  background:radial-gradient(circle at 36% 28%,#fff 0 8%,#f9f7ff 48%,#f1edfb 100%);
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.95),inset 0 -5px 15px rgba(93,66,162,.07);
+}
+.timer-ring:after{
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset:25px;
+  border:1px solid rgba(115,83,214,.08);
+  border-radius:50%;
+}
+.timer-ring svg{z-index:1;shape-rendering:geometricPrecision;overflow:visible}
+.timer-ring circle{stroke-width:10;vector-effect:non-scaling-stroke}
+.ring-track{stroke:#e8e3f1;filter:drop-shadow(0 1px 0 rgba(255,255,255,.9))}
+.ring-progress{
+  stroke:#7354dc;
+  filter:drop-shadow(0 4px 4px rgba(100,70,208,.25));
+  transition:stroke-dasharray .8s cubic-bezier(.35,0,.25,1);
+}
+.ring-marker{z-index:2;filter:drop-shadow(0 5px 5px rgba(91,59,193,.3));transition:transform .8s cubic-bezier(.35,0,.25,1)}
+.ring-marker:before{
+  width:14px;
+  height:14px;
+  border:3px solid #fff;
+  background:linear-gradient(135deg,#b7a3ff,#6442d2);
+  box-shadow:0 0 0 2px rgba(113,79,216,.13),0 3px 7px rgba(68,42,151,.32);
+}
+.timer-ring>div{position:relative;z-index:3;gap:7px}
+.timer-ring strong{color:#33265b;font-size:36px;letter-spacing:-2.3px;font-variant-numeric:tabular-nums}
+.timer-ring span{color:#817b91;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.timer-controls{gap:10px}
+.timer-controls button{height:42px;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.timer-controls button:hover{transform:translateY(-2px)}
+.timer-controls button:active{transform:translateY(0) scale(.97)}
+.reset{border:1px solid #e8e3f1;background:#f7f5fb;color:#695d7e}
+.start{min-width:124px;border:1px solid rgba(255,255,255,.35);border-radius:10px;background:linear-gradient(135deg,#886be8,#6243ce);box-shadow:0 9px 18px rgba(99,67,206,.28)}
+.start:hover{box-shadow:0 12px 22px rgba(99,67,206,.36)}
+html.dark .timer-card{border-color:#413959;background:linear-gradient(145deg,#29243a,#211d30)}
+html.dark .timer-card:before{background:radial-gradient(circle,rgba(151,121,255,.2),rgba(151,121,255,0) 68%)}
+html.dark .timer-tabs{border-color:#453d59;background:#302a42}
+html.dark .timer-tabs .active{background:#3a324f}
+html.dark .timer-ring{background:conic-gradient(from -90deg,#4a415d 0deg 8deg,transparent 8deg 14deg,#4a415d 14deg 16deg,transparent 16deg 22deg);box-shadow:0 18px 32px rgba(0,0,0,.26),inset 0 0 0 1px rgba(204,188,255,.07)}
+html.dark .timer-ring:before{background:radial-gradient(circle at 36% 28%,#342e48,#282239 54%,#211d30);box-shadow:inset 0 1px 2px rgba(255,255,255,.06),inset 0 -5px 15px rgba(0,0,0,.25)}
+html.dark .timer-ring:after{border-color:rgba(203,187,255,.12)}
+html.dark .ring-track{stroke:#494058}
+html.dark .timer-ring strong{color:#f4f0ff}
+html.dark .timer-ring span{color:#bdb4ce}
+html.dark .reset{border-color:#494158;background:#332d44;color:#d9d0e9}
+@media(max-width:620px){.timer-wrap{padding:2px 0 13px}.timer-ring{width:190px;height:190px;transform:none;margin:0}.timer-ring strong{font-size:33px}}
