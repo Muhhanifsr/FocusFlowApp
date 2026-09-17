@@ -137,3 +137,29 @@ html.dark .timer-ring strong{color:#f4f0ff}
 html.dark .timer-ring span{color:#bdb4ce}
 html.dark .reset{border-color:#494158;background:#332d44;color:#d9d0e9}
 @media(max-width:620px){.timer-wrap{padding:2px 0 13px}.timer-ring{width:190px;height:190px;transform:none;margin:0}.timer-ring strong{font-size:33px}}
+
+/* Clean dial override: one clear SVG track, no decorative texture or soft blur. */
+.timer-ring{
+  width:192px;
+  height:192px;
+  background:transparent;
+  box-shadow:none;
+}
+.timer-ring:before,.timer-ring:after{display:none}
+.timer-ring svg{shape-rendering:geometricPrecision;text-rendering:geometricPrecision}
+.timer-ring circle{stroke-width:9}
+.ring-track{stroke:#e9e5f1;filter:none}
+.ring-progress{stroke:#6d4ed6;filter:none;transition:stroke-dasharray .55s linear}
+.ring-marker{filter:none;transition:transform .55s linear}
+.ring-marker:before{
+  width:13px;
+  height:13px;
+  border:2px solid #fff;
+  background:#6d4ed6;
+  box-shadow:0 0 0 1px #6d4ed6;
+}
+.timer-ring>div{gap:5px}
+.timer-ring strong{font-size:35px;letter-spacing:-2px}
+html.dark .timer-ring{background:transparent;box-shadow:none}
+html.dark .ring-track{stroke:#423b51}
+@media(max-width:620px){.timer-ring{width:184px;height:184px}.timer-ring strong{font-size:32px}}
