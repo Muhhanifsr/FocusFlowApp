@@ -229,6 +229,10 @@ function App() {
     };
     updateTimer(); const timer = window.setInterval(updateTimer, 1_000); return () => window.clearInterval(timer);
   }, [activePeriod, timerEndAt, focusStartedAt, notificationReady]);
+  // Keep the dial on the timer that is actually counting down. Without this,
+  // switching tabs while a session runs could show a static ring from another
+  // duration even though the active timer continued in the background.
+  useEffect(() => { if (activePeriod && period !== activePeriod) setPeriod(activePeriod); }, [activePeriod, period]);
   useEffect(() => { const carousel = window.setInterval(() => setQuoteIndex((value) => (value + 1) % QUOTES.length), 5500); return () => window.clearInterval(carousel); }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); localStorage.setItem("focusflow-settings", JSON.stringify({ darkMode })); darkModeRef.current = darkMode; }, [darkMode]);
   const addActivity = (kind: ActivityKind, description: string, taskId?: string) => setActivities((current) => [...current, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, kind, description, taskId, occurredAt: new Date().toISOString() }].slice(-MAX_LOCAL_ACTIVITIES));
