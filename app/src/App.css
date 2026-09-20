@@ -172,3 +172,7 @@ html.dark .brand{color:#f5f1ff;text-shadow:0 1px 10px rgba(182,158,255,.35)}
 .task-row.is-completing .task-copy strong{text-decoration:line-through}
 @keyframes task-complete-exit{0%{opacity:1;transform:translateX(0) scale(1)}45%{background:#f4f0ff;transform:translateX(4px) scale(.985)}100%{opacity:0;transform:translateX(18px) scale(.96)}}
 html.dark .task-row.is-completing{background:#302845}
+.completed-count{min-width:16px;height:16px;margin-left:6px;padding:0 4px;display:inline-grid;place-items:center;border-radius:9px;background:#e5dfff;color:#6549d4;font-size:9px;line-height:1}
+.filters .selected .completed-count{background:#7657dc;color:#fff}
+html.dark .completed-count{background:#443960;color:#e3d9ff}
+html.dark .filters .selected .completed-count{background:#9275ef;color:#201a33}
