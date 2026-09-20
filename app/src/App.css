@@ -165,3 +165,10 @@ html.dark .timer-ring{background:transparent;box-shadow:none}
 html.dark .ring-track{stroke:#423b51}
 html.dark .brand{color:#f5f1ff;text-shadow:0 1px 10px rgba(182,158,255,.35)}
 @media(max-width:620px){.timer-ring{width:184px;height:184px}.timer-ring strong{font-size:32px}}
+
+/* The row finishes its motion before React moves it to the Completed filter. */
+.task-row.is-completing{pointer-events:none;animation:task-complete-exit .42s cubic-bezier(.22,.75,.3,1) forwards}
+.task-row.is-completing .checkbox{border-color:#866be2;background:#866be2;color:#fff}
+.task-row.is-completing .task-copy strong{text-decoration:line-through}
+@keyframes task-complete-exit{0%{opacity:1;transform:translateX(0) scale(1)}45%{background:#f4f0ff;transform:translateX(4px) scale(.985)}100%{opacity:0;transform:translateX(18px) scale(.96)}}
+html.dark .task-row.is-completing{background:#302845}
