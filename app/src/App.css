@@ -150,6 +150,7 @@ html.dark .reset{border-color:#494158;background:#332d44;color:#d9d0e9}
 .timer-ring circle{stroke-width:9}
 .ring-track{stroke:#e9e5f1;filter:none}
 .ring-progress{stroke:#6d4ed6;filter:none;transition:stroke-dasharray .55s linear}
+.timer-ring.is-ready .ring-progress{stroke-linecap:butt}
 .ring-marker{filter:none;transition:transform .55s linear}
 .ring-marker:before{
   width:13px;
@@ -162,4 +163,5 @@ html.dark .reset{border-color:#494158;background:#332d44;color:#d9d0e9}
 .timer-ring strong{font-size:35px;letter-spacing:-2px}
 html.dark .timer-ring{background:transparent;box-shadow:none}
 html.dark .ring-track{stroke:#423b51}
+html.dark .brand{color:#f5f1ff;text-shadow:0 1px 10px rgba(182,158,255,.35)}
 @media(max-width:620px){.timer-ring{width:184px;height:184px}.timer-ring strong{font-size:32px}}
