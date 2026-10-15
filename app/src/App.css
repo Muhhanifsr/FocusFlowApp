@@ -196,7 +196,6 @@ html.dark .quote-card small{color:#b8a5d6}
   .mobile-menu-button:active{transform:scale(.95)}
   .mobile-menu-button[aria-expanded="true"]{visibility:hidden;opacity:0;pointer-events:none}
   .mobile-menu-button:focus-visible{outline:2px solid #9b83e8;outline-offset:2px}
-  .nav-scrim{backdrop-filter:blur(2px)}
 }
 .stat-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 .streak-icon{background:linear-gradient(145deg,#fff3df,#ffe8d0);font-size:19px;filter:drop-shadow(0 2px 2px rgba(191,112,44,.12))}
@@ -224,3 +223,10 @@ html.dark .notes-card textarea::placeholder{color:#837c90}
 .study-mark svg{width:36px;height:36px;overflow:visible;filter:drop-shadow(0 2px 2px rgba(90,66,142,.1))}
 html.dark .study-mark{border-color:#4b4064;background:linear-gradient(145deg,#342c49,#302841 65%,#3c3040);color:#c1adff;box-shadow:0 7px 16px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.04)}
 @media(max-width:620px){.topbar-actions>.study-mark{display:none}}
+@media(max-width:620px){
+  .sidebar{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none;transform:translate3d(-100%,0,0);transition:transform .22s cubic-bezier(.22,.75,.28,1);will-change:transform;backface-visibility:hidden}
+  .sidebar.mobile-open{transform:translate3d(0,0,0)}
+  .nav-scrim{backdrop-filter:none;-webkit-backdrop-filter:none;animation:nav-scrim-in .16s ease-out both}
+}
+@keyframes nav-scrim-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.sidebar,.nav-scrim{animation:none!important;transition:none!important}}
