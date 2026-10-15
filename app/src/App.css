@@ -210,3 +210,36 @@ html.dark .quote-controls>button{border-color:#55486d;background:#41354e;color:#
 .month-grid button.current-day:not(.selected-day){background:#e5dcff;color:#5c40b7;outline-color:#9c84e3}
 .filters .selected .completed-count{background:#ded4ff;color:#5d43b1}
 .theme-toggle.on{background:#8067d5}
+@media(max-width:620px){
+  .mobile-menu-button{top:calc(env(safe-area-inset-top,0px) + 12px);left:calc(env(safe-area-inset-left,0px) + 12px);width:38px;height:38px;border:1px solid #ebe6f6;border-radius:11px;background:#fff;color:#7054ce;box-shadow:0 3px 10px rgba(53,39,92,.12);transition:opacity .16s ease,transform .16s ease}
+  .mobile-menu-button:active{transform:scale(.95)}
+  .mobile-menu-button[aria-expanded="true"]{visibility:hidden;opacity:0;pointer-events:none}
+  .mobile-menu-button:focus-visible{outline:2px solid #9b83e8;outline-offset:2px}
+  .nav-scrim{backdrop-filter:blur(2px)}
+}
+.stat-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.streak-icon{background:linear-gradient(145deg,#fff3df,#ffe8d0);font-size:19px;filter:drop-shadow(0 2px 2px rgba(191,112,44,.12))}
+.streak-stat strong{color:#684d95}
+@media(max-width:620px){.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.streak-icon{font-size:18px}}
+.workspace-grid{grid-template-columns:minmax(390px,1.55fr) minmax(265px,.9fr) minmax(240px,.8fr)}
+.workspace-grid>.tasks-card,.workspace-grid>.right-column,.notes-card{min-width:0}
+.notes-card{min-height:320px;padding:20px;display:flex;flex-direction:column;align-self:start;border-color:#ebe5f5;background:linear-gradient(155deg,#fff 0%,#fcfaff 62%,#f7f3ff 100%)}
+.notes-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px}
+.notes-heading h2{margin:0;font:700 16px 'Plus Jakarta Sans';letter-spacing:-.3px}
+.notes-heading p{margin:6px 0 0;color:#9691a2;font-size:11px;line-height:1.5}
+.note-sparkle{width:29px;height:29px;flex:0 0 29px;display:grid;place-items:center;border-radius:9px;background:#eee8ff;color:#8067d5;font-size:16px}
+.notes-card textarea{width:100%;min-height:210px;flex:1;padding:13px;border:1px solid #e9e3f3;border-radius:10px;outline:none;resize:vertical;background:rgba(255,255,255,.8);color:#383149;font:400 13px/1.65 'DM Sans',sans-serif;transition:border-color .18s ease,box-shadow .18s ease}
+.notes-card textarea::placeholder{color:#aaa4b5}
+.notes-card textarea:focus{border-color:#aa97e9;box-shadow:0 0 0 3px rgba(128,103,213,.12)}
+.notes-footer{display:flex;justify-content:space-between;gap:8px;margin-top:10px;color:#9892a3;font-size:10px}
+html.dark .notes-card{border-color:#413850;background:linear-gradient(155deg,#2b2638,#252131 70%,#29233b)}
+html.dark .notes-heading p,html.dark .notes-footer{color:#aaa2b9}
+html.dark .note-sparkle{background:#3b3151;color:#c5b5ff}
+html.dark .notes-card textarea{border-color:#474052;background:#211e2d;color:#eee9f8}
+html.dark .notes-card textarea::placeholder{color:#837c90}
+@media(max-width:1100px){.workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace-grid>.tasks-card{grid-column:1/-1}.right-column{grid-template-columns:1fr}.notes-card{min-height:260px}}
+@media(max-width:620px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-grid>.tasks-card{grid-column:auto}.right-column{grid-template-columns:1fr}.notes-card{min-height:250px;padding:17px}.notes-card textarea{min-height:170px}}
+.study-mark{width:50px;height:50px;flex:0 0 50px;display:grid;place-items:center;border:1px solid #e7defb;border-radius:16px;background:radial-gradient(circle at 28% 20%,#fff 0 12%,transparent 50%),linear-gradient(145deg,#f4efff,#eee8ff 60%,#fff2e8);color:#7658ca;box-shadow:0 7px 16px rgba(103,76,168,.13),inset 0 1px 0 rgba(255,255,255,.9)}
+.study-mark svg{width:36px;height:36px;overflow:visible;filter:drop-shadow(0 2px 2px rgba(90,66,142,.1))}
+html.dark .study-mark{border-color:#4b4064;background:linear-gradient(145deg,#342c49,#302841 65%,#3c3040);color:#c1adff;box-shadow:0 7px 16px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.04)}
+@media(max-width:620px){.topbar-actions>.study-mark{display:none}}
