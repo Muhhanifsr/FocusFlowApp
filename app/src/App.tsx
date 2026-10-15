@@ -224,7 +224,25 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>(() => normalizeTasks(readStored<unknown>(TASK_STORAGE_KEY, []))); const [activities, setActivities] = useState<Activity[]>(() => readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []).slice(-MAX_LOCAL_ACTIVITIES)); const [focusByDate, setFocusByDate] = useState<Record<string, number>>(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})); const [dailyInsights, setDailyInsights] = useState<DailyInsight[]>(() => hydrateInsights(normalizeTasks(readStored<unknown>(TASK_STORAGE_KEY, [])), readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []), readStored<DailyInsight[]>(INSIGHT_STORAGE_KEY, []), readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {}))); const [filter, setFilter] = useState("Today"); const [taskTitle, setTaskTitle] = useState(""); const [taskPriority, setTaskPriority] = useState<Priority>("Low"); const [taskDate, setTaskDate] = useState(jakartaDate()); const [reminderAt, setReminderAt] = useState(""); const [period, setPeriod] = useState<Period>("Focus"); const [activePeriod, setActivePeriod] = useState<Period | null>(initialTimer.activePeriod); const [timerEndAt, setTimerEndAt] = useState<number | null>(initialTimer.endAt); const [timerValues, setTimerValues] = useState<Record<Period, number>>(initialTimer.values); const [focusStartedAt, setFocusStartedAt] = useState<number | null>(initialTimer.focusStartedAt); const [quoteIndex, setQuoteIndex] = useState(0); const [page, setPage] = useState<Page>("overview"); const [darkMode, setDarkMode] = useState(() => readStored("focusflow-settings", { darkMode: false }).darkMode); const [remoteReady, setRemoteReady] = useState(!SHEETS_URL); const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle"); const [showTaskForm, setShowTaskForm] = useState(false); const [taskMenu, setTaskMenu] = useState<string | null>(null); const [focusSeconds, setFocusSeconds] = useState(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})[jakartaDate()] || 0); const [notificationReady, setNotificationReady] = useState(() => "Notification" in window && Notification.permission === "granted"); const [appNotification, setAppNotification] = useState<AppNotification | null>(null); const [deletedTask, setDeletedTask] = useState<DeletedTask | null>(null); const [completingTaskIds, setCompletingTaskIds] = useState<string[]>([]); const focusSecondsRef = useRef(focusSeconds); const tasksRef = useRef(tasks); const activitiesRef = useRef(activities); const insightsRef = useRef(dailyInsights); const focusByDateRef = useRef(focusByDate); const darkModeRef = useRef(darkMode); const syncInFlightRef = useRef(false); const syncQueuedRef = useRef(false);
   const today = jakartaDate(); const todayTasks = useMemo(() => tasks.filter((task) => task.date === today), [tasks, today]); const completed = useMemo(() => todayTasks.reduce((total, task) => total + Number(task.done), 0), [todayTasks]); const visibleTasks = filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks.filter((task) => !task.done); const progress = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const streak = streakFromTasks(tasks); const seconds = timerValues[period]; const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const timerRemainingPercent = Math.max(0, Math.min(100, (seconds / DURATIONS[period]) * 100)); const timerIsReady = !activePeriod && seconds === DURATIONS[period];
   const closeTaskForm = () => { setShowTaskForm(false); setReminderAt(""); setTaskPriority("Low"); };
-  const sendNotification = (notification: AppNotification, tag: string) => { playNotificationSound(); setAppNotification(notification); if (notificationReady) new Notification(`FocusFlow · ${notification.title}`, { body: notification.message, icon: "/anime-mark.svg", tag, requireInteraction: true }); };
+  const sendNotification = (notification: AppNotification, tag: string) => {
+    playNotificationSound();
+    setAppNotification(notification);
+    if (!notificationReady || !("Notification" in window)) return;
+
+    // Mobile installed PWAs are more reliable with the service worker API.
+    // Keep notification failures isolated so a browser limitation cannot blank
+    // the React app when a timer expires while it is in the background.
+    const options = { body: notification.message, icon: `${import.meta.env.BASE_URL}anime-mark.svg`, tag, requireInteraction: true };
+    try {
+      if ("serviceWorker" in navigator) {
+        void navigator.serviceWorker.ready
+          .then((registration) => registration.showNotification(`FocusFlow · ${notification.title}`, options))
+          .catch(() => { try { new Notification(`FocusFlow · ${notification.title}`, options); } catch { /* Notifications are optional on mobile browsers. */ } });
+      } else {
+        new Notification(`FocusFlow · ${notification.title}`, options);
+      }
+    } catch { /* Notifications are optional on mobile browsers. */ }
+  };
   const commitFocusSession = (startedAt: number | null) => { if (!startedAt) return; const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); if (elapsed) setFocusSeconds((value) => value + elapsed); };
   useEffect(() => { localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({ activePeriod, endAt: timerEndAt, values: timerValues, focusStartedAt } satisfies TimerState)); }, [activePeriod, timerEndAt, timerValues, focusStartedAt]);
   useEffect(() => { localStorage.setItem(NOTE_STORAGE_KEY, quickNote); }, [quickNote]);
@@ -242,7 +260,12 @@ function App() {
       if (activePeriod === "Focus") { commitFocusSession(focusStartedAt); setFocusStartedAt(null); }
       sendNotification({ title: `${activePeriod} selesai`, message: activePeriod === "Focus" ? "Sesi fokus selesai. Saatnya beristirahat." : "Waktu istirahat selesai. Siap fokus lagi?", kind: "timer" }, `focusflow-timer-${activePeriod}`);
     };
-    updateTimer(); const timer = window.setInterval(updateTimer, 1_000); return () => window.clearInterval(timer);
+    updateTimer();
+    const timer = window.setInterval(updateTimer, 1_000);
+    const resumeTimer = () => { if (document.visibilityState === "visible") updateTimer(); };
+    document.addEventListener("visibilitychange", resumeTimer);
+    window.addEventListener("pageshow", resumeTimer);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", resumeTimer); window.removeEventListener("pageshow", resumeTimer); };
   }, [activePeriod, timerEndAt, focusStartedAt, notificationReady]);
   // Keep the dial on the timer that is actually counting down. Without this,
   // switching tabs while a session runs could show a static ring from another
