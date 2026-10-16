@@ -30,9 +30,12 @@ const PUSH_API_URL = import.meta.env.VITE_PUSH_API_URL as string | undefined;
 const SHEET_LINK = "https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing";
 const DURATIONS: Record<Period, number> = { Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 };
 const QUOTES = [
-  { text: "The key is not to prioritize what's on your schedule, but to schedule your priorities.", author: "Stephen Covey" },
-  { text: "Success is the sum of small efforts, repeated day in and day out.", author: "Robert Collier" },
-  { text: "It always seems impossible until it's done.", author: "Nelson Mandela" },
+  { text: "Sesuatu sering terasa mustahil sampai akhirnya berhasil dilakukan.", author: "Nelson Mandela" },
+  { text: "Kesulitan mematahkan sebagian orang, tetapi membentuk yang lain.", author: "Nelson Mandela" },
+  { text: "Belajarlah dari pengalaman yang menyenangkan maupun yang sulit.", author: "Nelson Mandela" },
+  { text: "Setiap orang dapat melampaui keadaannya dengan tekun dan mencintai pekerjaannya.", author: "Nelson Mandela" },
+  { text: "Terimalah kekecewaan yang terbatas, tetapi tetaplah berpegang pada harapan tanpa batas.", author: "Martin Luther King Jr." },
+  { text: "Tanpa perjuangan, tidak akan ada kemajuan.", author: "Frederick Douglass" },
 ];
 
 const jakartaDateFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" });
@@ -310,7 +313,6 @@ function App() {
   // switching tabs while a session runs could show a static ring from another
   // duration even though the active timer continued in the background.
   useEffect(() => { if (activePeriod && period !== activePeriod) setPeriod(activePeriod); }, [activePeriod, period]);
-  useEffect(() => { const carousel = window.setInterval(() => setQuoteIndex((value) => (value + 1) % QUOTES.length), 5500); return () => window.clearInterval(carousel); }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); localStorage.setItem("focusflow-settings", JSON.stringify({ darkMode })); darkModeRef.current = darkMode; }, [darkMode]);
   const addActivity = (kind: ActivityKind, description: string, taskId?: string) => setActivities((current) => [...current, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, kind, description, taskId, occurredAt: new Date().toISOString() }].slice(-MAX_LOCAL_ACTIVITIES));
   useEffect(() => { if (remoteReady) addActivity("page_viewed", `Membuka halaman ${page}`); }, [page, remoteReady]);
