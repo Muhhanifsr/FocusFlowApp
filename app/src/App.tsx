@@ -26,6 +26,7 @@ const SYNC_DEBOUNCE_MS = 5_000;
 const MAX_LOCAL_ACTIVITIES = 500;
 const MAX_LOCAL_INSIGHTS = 400;
 const SHEETS_URL = import.meta.env.VITE_GOOGLE_SHEETS_WEB_APP_URL as string | undefined;
+const PUSH_API_URL = import.meta.env.VITE_PUSH_API_URL as string | undefined;
 const SHEET_LINK = "https://docs.google.com/spreadsheets/d/1rsTToV5dWZGgjSrWNzV4eUcVN4XCJSSty9yMsAZWvls/edit?usp=sharing";
 const DURATIONS: Record<Period, number> = { Focus: 25 * 60, "Short Break": 5 * 60, "Long Break": 15 * 60 };
 const QUOTES = [
@@ -224,10 +225,10 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>(() => normalizeTasks(readStored<unknown>(TASK_STORAGE_KEY, []))); const [activities, setActivities] = useState<Activity[]>(() => readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []).slice(-MAX_LOCAL_ACTIVITIES)); const [focusByDate, setFocusByDate] = useState<Record<string, number>>(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})); const [dailyInsights, setDailyInsights] = useState<DailyInsight[]>(() => hydrateInsights(normalizeTasks(readStored<unknown>(TASK_STORAGE_KEY, [])), readStored<Activity[]>(ACTIVITY_STORAGE_KEY, []), readStored<DailyInsight[]>(INSIGHT_STORAGE_KEY, []), readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {}))); const [filter, setFilter] = useState("Today"); const [taskTitle, setTaskTitle] = useState(""); const [taskPriority, setTaskPriority] = useState<Priority>("Low"); const [taskDate, setTaskDate] = useState(jakartaDate()); const [reminderAt, setReminderAt] = useState(""); const [period, setPeriod] = useState<Period>("Focus"); const [activePeriod, setActivePeriod] = useState<Period | null>(initialTimer.activePeriod); const [timerEndAt, setTimerEndAt] = useState<number | null>(initialTimer.endAt); const [timerValues, setTimerValues] = useState<Record<Period, number>>(initialTimer.values); const [focusStartedAt, setFocusStartedAt] = useState<number | null>(initialTimer.focusStartedAt); const [quoteIndex, setQuoteIndex] = useState(0); const [page, setPage] = useState<Page>("overview"); const [darkMode, setDarkMode] = useState(() => readStored("focusflow-settings", { darkMode: false }).darkMode); const [remoteReady, setRemoteReady] = useState(!SHEETS_URL); const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "success" | "error">("idle"); const [showTaskForm, setShowTaskForm] = useState(false); const [taskMenu, setTaskMenu] = useState<string | null>(null); const [focusSeconds, setFocusSeconds] = useState(() => readStored<Record<string, number>>(FOCUS_STORAGE_KEY, {})[jakartaDate()] || 0); const [notificationReady, setNotificationReady] = useState(() => "Notification" in window && Notification.permission === "granted"); const [appNotification, setAppNotification] = useState<AppNotification | null>(null); const [deletedTask, setDeletedTask] = useState<DeletedTask | null>(null); const [completingTaskIds, setCompletingTaskIds] = useState<string[]>([]); const focusSecondsRef = useRef(focusSeconds); const tasksRef = useRef(tasks); const activitiesRef = useRef(activities); const insightsRef = useRef(dailyInsights); const focusByDateRef = useRef(focusByDate); const darkModeRef = useRef(darkMode); const syncInFlightRef = useRef(false); const syncQueuedRef = useRef(false);
   const today = jakartaDate(); const todayTasks = useMemo(() => tasks.filter((task) => task.date === today), [tasks, today]); const completed = useMemo(() => todayTasks.reduce((total, task) => total + Number(task.done), 0), [todayTasks]); const visibleTasks = filter === "Completed" ? todayTasks.filter((task) => task.done) : todayTasks.filter((task) => !task.done); const progress = todayTasks.length ? Math.round((completed / todayTasks.length) * 100) : 0; const streak = streakFromTasks(tasks); const seconds = timerValues[period]; const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; const timerRemainingPercent = Math.max(0, Math.min(100, (seconds / DURATIONS[period]) * 100)); const timerIsReady = !activePeriod && seconds === DURATIONS[period];
   const closeTaskForm = () => { setShowTaskForm(false); setReminderAt(""); setTaskPriority("Low"); };
-  const sendNotification = (notification: AppNotification, tag: string) => {
+  const sendNotification = (notification: AppNotification, tag: string, showSystem = true) => {
     playNotificationSound();
     setAppNotification(notification);
-    if (!notificationReady || !("Notification" in window)) return;
+    if (!showSystem || !notificationReady || !("Notification" in window)) return;
 
     // Mobile installed PWAs are more reliable with the service worker API.
     // Keep notification failures isolated so a browser limitation cannot blank
@@ -243,29 +244,6 @@ function App() {
       }
     } catch { /* Notifications are optional on mobile browsers. */ }
   };
-  const showRunningTimerNotification = (active: Period, remaining: number) => {
-    if (!notificationReady || !("Notification" in window)) return;
-    const minutes = Math.floor(remaining / 60).toString().padStart(2, "0");
-    const seconds = (remaining % 60).toString().padStart(2, "0");
-    const title = `FocusFlow · ${active}`;
-    const options = {
-      body: `${minutes}:${seconds} tersisa`,
-      icon: `${import.meta.env.BASE_URL}anime-mark.svg`,
-      tag: "focusflow-running-timer",
-      renotify: false,
-      requireInteraction: true,
-      data: { url: import.meta.env.BASE_URL },
-    };
-    try {
-      if ("serviceWorker" in navigator) {
-        void navigator.serviceWorker.ready.then((registration) => registration.showNotification(title, options)).catch(() => {
-          try { new Notification(title, options); } catch { /* Mobile browser notification APIs can be restricted. */ }
-        });
-      } else {
-        new Notification(title, options);
-      }
-    } catch { /* The in-app timer remains available if system notifications are blocked. */ }
-  };
   const closeRunningTimerNotification = () => {
     if (!("serviceWorker" in navigator)) return;
     void navigator.serviceWorker.ready
@@ -274,6 +252,34 @@ function App() {
         notifications.forEach((notification) => notification.close());
       })
       .catch(() => { /* Closing the system notification is best effort. */ });
+  };
+  const schedulePushNotification = async (active: Period, endAt: number) => {
+    if (!PUSH_API_URL || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const keyResponse = await fetch(`${PUSH_API_URL.replace(/\/$/, "")}/vapid-public-key`);
+        if (!keyResponse.ok) return;
+        const { publicKey } = await keyResponse.json() as { publicKey: string };
+        const padding = "=".repeat((4 - publicKey.length % 4) % 4);
+        const rawKey = atob((publicKey + padding).replace(/-/g, "+").replace(/_/g, "/"));
+        const applicationServerKey = Uint8Array.from(rawKey, (character) => character.charCodeAt(0));
+        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      }
+      const response = await fetch(`${PUSH_API_URL.replace(/\/$/, "")}/schedule`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription, period: active, endAt, appPath: import.meta.env.BASE_URL }),
+      });
+      if (!response.ok) console.warn("FocusFlow could not schedule the timer notification.");
+    } catch (error) { console.warn("Push notifications are unavailable on this device.", error); }
+  };
+  const cancelPushNotification = async () => {
+    if (!PUSH_API_URL || !("serviceWorker" in navigator)) return;
+    try {
+      const subscription = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (subscription) await fetch(`${PUSH_API_URL.replace(/\/$/, "")}/cancel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription }) });
+    } catch { /* The local timer can still be paused if the push service is unreachable. */ }
   };
   const commitFocusSession = (startedAt: number | null) => { if (!startedAt) return; const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); if (elapsed) setFocusSeconds((value) => value + elapsed); };
   useEffect(() => { localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({ activePeriod, endAt: timerEndAt, values: timerValues, focusStartedAt } satisfies TimerState)); }, [activePeriod, timerEndAt, timerValues, focusStartedAt]);
@@ -285,14 +291,13 @@ function App() {
       const remaining = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
       if (remaining > 0) {
         setTimerValues((values) => values[activePeriod] === remaining ? values : { ...values, [activePeriod]: remaining });
-        showRunningTimerNotification(activePeriod, remaining);
         if (activePeriod === "Focus" && focusStartedAt) { const elapsed = Math.floor((Date.now() - focusStartedAt) / 1000); if (elapsed > 0) { setFocusSeconds((value) => value + elapsed); setFocusStartedAt(focusStartedAt + elapsed * 1000); } }
         return;
       }
       closeRunningTimerNotification();
       setTimerValues((values) => ({ ...values, [activePeriod]: DURATIONS[activePeriod] })); setActivePeriod(null); setTimerEndAt(null);
       if (activePeriod === "Focus") { commitFocusSession(focusStartedAt); setFocusStartedAt(null); }
-      sendNotification({ title: `${activePeriod} selesai`, message: activePeriod === "Focus" ? "Sesi fokus selesai. Saatnya beristirahat." : "Waktu istirahat selesai. Siap fokus lagi?", kind: "timer" }, `focusflow-timer-${activePeriod}`);
+      sendNotification({ title: `${activePeriod} selesai`, message: activePeriod === "Focus" ? "Sesi fokus selesai. Saatnya beristirahat." : "Waktu istirahat selesai. Siap fokus lagi?", kind: "timer" }, `focusflow-timer-${activePeriod}`, false);
     };
     updateTimer();
     const timer = window.setInterval(updateTimer, 1_000);
@@ -364,6 +369,20 @@ function App() {
   useEffect(() => { if (!appNotification) return; const timer = window.setTimeout(() => setAppNotification(null), 10_000); return () => window.clearTimeout(timer); }, [appNotification]);
   useEffect(() => { if (!deletedTask) return; const timer = window.setTimeout(() => setDeletedTask(null), 8_000); return () => window.clearTimeout(timer); }, [deletedTask]);
   async function handleManualSync() { await flushSync(true); }
+  async function startTimer(active: Period) {
+    const startedAt = Date.now(); const endAt = startedAt + timerValues[active] * 1000;
+    if (activePeriod === "Focus") commitFocusSession(focusStartedAt);
+    setActivePeriod(active); setTimerEndAt(endAt); setFocusStartedAt(active === "Focus" ? startedAt : null);
+    if ("Notification" in window && Notification.permission === "default") {
+      try { const permission = await Notification.requestPermission(); setNotificationReady(permission === "granted"); if (permission === "granted") await schedulePushNotification(active, endAt); }
+      catch { /* Timer remains available if the browser cannot request notification permission. */ }
+    } else if (notificationReady) await schedulePushNotification(active, endAt);
+  }
+  function pauseTimer(active: Period) {
+    void cancelPushNotification(); closeRunningTimerNotification();
+    if (active === "Focus") { commitFocusSession(focusStartedAt); setFocusStartedAt(null); }
+    setActivePeriod(null); setTimerEndAt(null);
+  }
   function addTask(event: FormEvent) { event.preventDefault(); if (!taskTitle.trim()) return; const createdAt = new Date().toISOString(); const task: Task = { id: createTaskId(), title: taskTitle.trim(), category: "Personal", priority: taskPriority, done: false, date: taskDate, reminderAt: reminderAt || undefined, createdAt }; if (reminderAt && "Notification" in window && Notification.permission === "default") void Notification.requestPermission().then((permission) => setNotificationReady(permission === "granted")); setTasks((current) => [...current, task]); addActivity("task_created", `Task dibuat: ${task.title}`, task.id); setTaskTitle(""); closeTaskForm(); }
   function toggleTask(id: string) { const task = tasksRef.current.find((item) => item.id === id); if (!task || completingTaskIds.includes(id)) return; const nextDone = !task.done; const completedAt = nextDone ? new Date().toISOString() : undefined; setTasks((current) => current.map((item) => item.id === id ? { ...item, done: nextDone, completedAt } : item)); tasksRef.current = tasksRef.current.map((item) => item.id === id ? { ...item, done: nextDone, completedAt } : item); addActivity(task.done ? "task_reopened" : "task_completed", `${task.done ? "Task dibuka kembali" : "Task selesai"}: ${task.title}`, id); if (nextDone) { setCompletingTaskIds((current) => [...current, id]); window.setTimeout(() => setCompletingTaskIds((current) => current.filter((taskId) => taskId !== id)), 420); } }
   function deleteTask(task: Task) { const index = tasks.findIndex((item) => item.id === task.id); if (index < 0) return; setTasks((current) => current.filter((item) => item.id !== task.id)); setTaskMenu(null); setDeletedTask({ task, index }); addActivity("task_deleted", `Task dihapus: ${task.title}`, task.id); }
@@ -378,7 +397,7 @@ function App() {
       <section className="quote-card"><span>“</span><div className="quote-content"><p>{QUOTES[quoteIndex].text}</p><small>— {QUOTES[quoteIndex].author}</small></div></section>
       <section className="stat-grid"><article><div className="stat-icon violet"><Icon name="check"/></div><div><span>Tasks completed</span><strong>{completed}<em> / {todayTasks.length}</em></strong></div></article><article><div className="stat-icon amber"><Icon name="target"/></div><div><span>Focus time</span><strong>{focusTimeLabel(focusSeconds)}</strong></div></article><article><div className="stat-icon pink"><Icon name="chart"/></div><div><span>Daily progress</span><strong>{progress}<em>%</em></strong></div></article><article className="streak-stat"><div className="stat-icon streak-icon" aria-hidden="true">🔥</div><div><span>Day streak</span><strong>{streak}<em> {streak === 1 ? "day" : "days"}</em></strong></div></article></section>
       <div className="workspace-grid"><section className="tasks-card card"><div className="section-heading"><div><h2>Today&apos;s tasks</h2><p>{todayTasks.filter((task) => !task.done).length} tasks remaining</p></div></div><div className="filters">{["Today", "Completed"].map((item) => <button onClick={() => setFilter(item)} className={filter === item ? "selected" : ""} key={item}>{item}{item === "Completed" && <b className="completed-count" aria-label={`${completed} task selesai`}>{completed}</b>}</button>)}</div><div className="task-list">{visibleTasks.length ? visibleTasks.map((task) => { const isCompleting = completingTaskIds.includes(task.id); return <div className={`task-row ${task.done ? "complete" : ""} ${isCompleting ? "is-completing" : ""}`} key={task.id} aria-busy={isCompleting}><button className="checkbox" onClick={() => toggleTask(task.id)} aria-label={`Toggle ${task.title}`} disabled={isCompleting}>{task.done && "✓"}</button><div className="task-copy"><strong>{task.title}</strong><span>Created {dateLabel(createdDate(task))} <b className={task.date < today ? "due-badge overdue" : task.date === today ? "due-badge today" : "due-badge"}>Due {taskDateDescription(task.date)}</b></span></div><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><div className="task-actions"><button className="more" onClick={() => setTaskMenu(taskMenu === task.id ? null : task.id)} aria-label={`Aksi untuk ${task.title}`} disabled={isCompleting}><Icon name="more"/></button>{taskMenu === task.id && <div className="task-menu"><button onClick={() => toggleTask(task.id)}>{task.done ? "Mark active" : "Mark complete"}</button><button onClick={() => deleteTask(task)}>Delete task</button></div>}</div></div>; }) : <div className="empty-task-state"><span>✦</span><strong>{filter === "Completed" ? "Belum ada task yang selesai" : "Hari ini masih terasa lapang"}</strong><p>{filter === "Completed" ? "Selesaikan satu task untuk melihat progresmu di sini." : "Mulai dengan satu hal kecil yang paling penting."}</p>{filter === "Today" && <button onClick={() => openNewTask(today)}><Icon name="plus" size={16}/>Tambah task pertama</button>}</div>}</div></section>
-      <aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>{activePeriod ? `${activePeriod} is running` : "Stay in the zone"}</p></div></div><div className="timer-tabs">{(Object.keys(DURATIONS) as Period[]).map((item) => <button onClick={() => setPeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className={timerIsReady ? "timer-ring is-ready" : "timer-ring"}><svg viewBox="0 0 168 168" aria-hidden="true"><circle className="ring-track" cx="84" cy="84" r="78"/><path className="ring-progress" d="M84 6 A78 78 0 0 0 84 162 A78 78 0 0 0 84 6" pathLength="100" style={{ strokeDasharray: `${100 - timerRemainingPercent} 100` }}/></svg><div><strong>{time}</strong><span>{period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { if (activePeriod === period) { closeRunningTimerNotification(); if (period === "Focus") { commitFocusSession(focusStartedAt); setFocusStartedAt(null); } setActivePeriod(null); setTimerEndAt(null); } setTimerValues((values) => ({ ...values, [period]: DURATIONS[period] })); addActivity("timer_reset", `Timer ${period} direset`); }}><Icon name="rotate"/></button><button className="start" onClick={() => { const stopping = activePeriod === period; if (stopping) { closeRunningTimerNotification(); if (period === "Focus") { commitFocusSession(focusStartedAt); setFocusStartedAt(null); } setActivePeriod(null); setTimerEndAt(null); } else { const startedAt = Date.now(); if (activePeriod === "Focus") commitFocusSession(focusStartedAt); setActivePeriod(period); setTimerEndAt(startedAt + timerValues[period] * 1000); setFocusStartedAt(period === "Focus" ? startedAt : null); if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission().then((permission) => setNotificationReady(permission === "granted")); } addActivity(stopping ? "focus_paused" : "focus_started", `${period} ${stopping ? "dijeda" : "dimulai"}`); }}><Icon name={activePeriod === period ? "pause" : "play"}/>{activePeriod === period ? "Pause" : "Start"}</button></div></section></aside><section className="notes-card card"><div className="notes-heading"><div><h2>Quick note</h2><p>Catat ide atau hal penting saat fokus.</p></div><span className="note-sparkle" aria-hidden="true">✦</span></div><textarea aria-label="Catatan cepat" value={quickNote} onChange={(event) => setQuickNote(event.target.value)} maxLength={1200} placeholder="Tulis catatanmu di sini…"/><div className="notes-footer"><span>Tersimpan otomatis di perangkat ini</span><span>{quickNote.length}/1200</span></div></section></div>
+      <aside className="right-column"><section className="timer-card card"><div className="timer-heading"><div><h2>Focus timer</h2><p>{activePeriod ? `${activePeriod} is running` : "Stay in the zone"}</p></div></div><div className="timer-tabs">{(Object.keys(DURATIONS) as Period[]).map((item) => <button onClick={() => setPeriod(item)} className={period === item ? "active" : ""} key={item}>{item}</button>)}</div><div className="timer-wrap"><div className={timerIsReady ? "timer-ring is-ready" : "timer-ring"}><svg viewBox="0 0 168 168" aria-hidden="true"><circle className="ring-track" cx="84" cy="84" r="78"/><path className="ring-progress" d="M84 6 A78 78 0 0 0 84 162 A78 78 0 0 0 84 6" pathLength="100" style={{ strokeDasharray: `${100 - timerRemainingPercent} 100` }}/></svg><div><strong>{time}</strong><span>{period}</span></div></div></div><div className="timer-controls"><button className="reset" onClick={() => { if (activePeriod === period) pauseTimer(period); setTimerValues((values) => ({ ...values, [period]: DURATIONS[period] })); addActivity("timer_reset", `Timer ${period} direset`); }}><Icon name="rotate"/></button><button className="start" onClick={() => { const stopping = activePeriod === period; if (stopping) pauseTimer(period); else void startTimer(period); addActivity(stopping ? "focus_paused" : "focus_started", `${period} ${stopping ? "dijeda" : "dimulai"}`); }}><Icon name={activePeriod === period ? "pause" : "play"}/>{activePeriod === period ? "Pause" : "Start"}</button></div></section></aside><section className="notes-card card"><div className="notes-heading"><div><h2>Quick note</h2><p>Catat ide atau hal penting saat fokus.</p></div><span className="note-sparkle" aria-hidden="true">✦</span></div><textarea aria-label="Catatan cepat" value={quickNote} onChange={(event) => setQuickNote(event.target.value)} maxLength={1200} placeholder="Tulis catatanmu di sini…"/><div className="notes-footer"><span>Tersimpan otomatis di perangkat ini</span><span>{quickNote.length}/1200</span></div></section></div>
     </>}</main>
     {showTaskForm && <div className="modal-backdrop" onMouseDown={closeTaskForm}><form className="task-modal" onSubmit={addTask} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={closeTaskForm}>×</button><p className="eyebrow">PLAN YOUR DAY</p><h2>New task</h2><label>Task title<input autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} placeholder="What needs to be done?"/></label><label>Due date<input type="date" value={taskDate} min={today} onChange={(event) => setTaskDate(event.target.value)}/></label><label>Reminder time<input type="time" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)}/></label><label>Priority<select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as Priority)}><option>Low</option><option>Medium</option><option>High</option></select></label><button className="new-task" type="submit"><Icon name="plus"/>Add task</button></form></div>}
   </div>;

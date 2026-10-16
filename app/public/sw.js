@@ -1,4 +1,4 @@
-const CACHE_NAME = "focusflow-pwa-v1";
+const CACHE_NAME = "focusflow-pwa-v2";
 const scopeUrl = new URL(self.registration.scope);
 const appShellUrl = new URL("index.html", scopeUrl).href;
 const shellAssets = [
@@ -33,6 +33,29 @@ self.addEventListener("activate", (event) => {
         .map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
+});
+
+// Push events are delivered by the browser even when every FocusFlow tab is closed.
+self.addEventListener("push", (event) => {
+  let payload = { title: "FocusFlow", body: "Timer selesai.", url: scopeUrl.href };
+  try { if (event.data) payload = { ...payload, ...event.data.json() }; } catch { /* Use a safe default for malformed push payloads. */ }
+  event.waitUntil(self.registration.showNotification(payload.title || "FocusFlow", {
+    body: payload.body || "Timer selesai.",
+    icon: new URL("anime-mark.svg", scopeUrl).href,
+    badge: new URL("pwa-192.png", scopeUrl).href,
+    tag: "focusflow-timer-complete",
+    renotify: true,
+    data: { url: payload.url || scopeUrl.href },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || scopeUrl.href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    const existing = clients.find((client) => "focus" in client);
+    return existing ? existing.focus() : self.clients.openWindow(target);
+  }));
 });
 
 self.addEventListener("fetch", (event) => {

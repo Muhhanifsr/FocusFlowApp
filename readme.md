@@ -41,6 +41,7 @@ The appearance of FocusFlowApp is mainly in the overview section
 
 - Google Apps Script
 - Google Sheets
+- Node.js Web Push service for timer notifications while the installed PWA is closed (setup: [`app/push-server/README.md`](app/push-server/README.md))
 
 ## Instalation
 
