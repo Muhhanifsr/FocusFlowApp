@@ -21,3 +21,9 @@ This small Node service schedules timer completion pushes. It must run on an alw
 The service stores pending subscriptions and timer deadlines in its JSON data file so they survive process restarts. Use a single service instance or shared storage with locking; this implementation is intended for one instance. Keep the storage private and persistent. Do not expose the VAPID private key to the frontend.
 
 The browser push provider delivers the completion notification while the PWA is closed. Timer display is calculated from the saved end time, so the display catches up when the PWA returns to the foreground. OS battery policies and push provider delivery can introduce some notification delay.
+
+## Local development
+
+The app's ignored `app/.env` file can hold both Vite settings and local push server settings. The server start script loads that file from this directory. Set `VITE_PUSH_API_URL=http://localhost:8788`, `ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173`, and the VAPID values there. Start the service with `npm start` here, then start the app with `npm run dev` from `app/`.
+
+Use a newly generated VAPID pair for any shared or production deployment. Never put `VAPID_PRIVATE_KEY` in a `VITE_` variable or frontend code. Configure the deployed PWA's exact HTTPS origin in the server's `ALLOWED_ORIGINS`, expose the push service over HTTPS, and set the production `VITE_PUSH_API_URL` before building the PWA.
