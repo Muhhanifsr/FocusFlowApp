@@ -274,3 +274,20 @@ html.dark .study-mark{border-color:#4b4064;background:linear-gradient(145deg,#34
 .topbar-actions>.new-task svg{width:20px;height:20px}
 .quote-card p{font-size:15px;line-height:1.6}
 @media(max-width:620px){.quote-card p{font-size:14px;line-height:1.6}}
+
+/* Improve readability in the task form and the empty task state. */
+.task-modal h2{font-size:24px}
+.task-modal label{font-size:14px}
+.task-modal input,.task-modal select{height:44px;padding:0 12px;font-size:15px}
+.task-modal>.new-task{font-size:15px}
+.empty-task-state strong{font-size:16px;line-height:1.4}
+.empty-task-state p{max-width:290px;font-size:13px;line-height:1.6}
+.empty-task-state button{font-size:13px}
+@media(max-width:620px){
+  .task-modal label{font-size:14px}
+  .task-modal input,.task-modal select{font-size:16px}
+  .task-modal>.new-task{font-size:15px}
+  .empty-task-state{padding:38px 16px 30px}
+  .empty-task-state strong{font-size:15px}
+  .empty-task-state p{font-size:13px}
+}
