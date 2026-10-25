@@ -295,3 +295,24 @@ html.dark .study-mark{border-color:#4b4064;background:linear-gradient(145deg,#34
   .empty-task-state strong{font-size:15px}
   .empty-task-state p{font-size:13px}
 }
+
+/* Keep quick notes compact beside the focus timer. */
+.workspace-grid{grid-template-columns:minmax(390px,1.55fr) minmax(265px,.9fr)}
+.right-column{align-content:start}
+.workspace-grid>.notes-card{grid-column:auto;min-height:0;padding:16px;background:linear-gradient(155deg,#fff 0%,#fcfaff 62%,#f7f3ff 100%)}
+.notes-heading{margin-bottom:10px}
+.notes-heading h2{font-size:14px}
+.notes-heading p{font-size:10px}
+.note-sparkle{width:25px;height:25px;flex-basis:25px}
+.notes-card .quick-note-form textarea{min-height:58px;max-height:90px;resize:vertical;padding:10px;font-size:12px}
+.quick-note-form .notes-footer{font-size:9px}
+.quick-note-form .new-task{height:30px;padding:0 10px;font-size:10px}
+.workspace-grid>.notes-card .quick-note-list{grid-template-columns:1fr;gap:7px;max-height:170px;margin-top:10px;overflow:auto}
+.workspace-grid>.notes-card .quick-note-item{min-height:0;max-height:none;flex-direction:row;align-items:flex-start;gap:7px;padding:8px 9px;border-radius:8px;box-shadow:none}
+.workspace-grid>.notes-card .quick-note-item header{flex:0 0 auto;gap:4px;font-size:9px}
+.workspace-grid>.notes-card .quick-note-item header button{width:19px;height:19px;font-size:16px}
+.workspace-grid>.notes-card .quick-note-item p{max-height:52px;font-size:11px;line-height:1.45}
+.workspace-grid>.notes-card .quick-note-empty{padding:3px 0;font-size:10px}
+html.dark .workspace-grid>.notes-card{background:linear-gradient(145deg,#2b2638,#252131 70%,#29233b)}
+@media(max-width:1100px){.workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace-grid>.tasks-card{grid-column:1/-1}.right-column{grid-template-columns:1fr}.workspace-grid>.notes-card{min-height:0}}
+@media(max-width:620px){.workspace-grid{grid-template-columns:minmax(0,1fr)}.workspace-grid>.tasks-card{grid-column:auto}.right-column{grid-template-columns:1fr}.workspace-grid>.notes-card{min-height:0;padding:15px}.workspace-grid>.notes-card .quick-note-list{max-height:145px}}
